@@ -1,1 +1,4 @@
 data/
+dist/
+__pycache__/
+**/poetry.lock
