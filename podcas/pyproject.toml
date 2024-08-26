@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11.9"
 duckdb = "^1.0.0"
+sentence-transformers = "^3.0.1"
 
 
 [build-system]
