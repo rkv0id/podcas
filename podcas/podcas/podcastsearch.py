@@ -1,10 +1,12 @@
 from threading import Lock
+from logging import getLogger
 
-from .datastore import Datastore
+from .datastore import DataStore
 
 class PodcastSearch:
     __instance = None
     __lock = Lock()
+    _logger = getLogger(f"{__name__}.{__qualname__}")
 
     def __new__(cls, *args, **kwargs):
         with cls.__lock:
@@ -14,4 +16,4 @@ class PodcastSearch:
 
     def __init__(self, path: str):
         self.source = path
-        self.__db = Datastore(path)
+        self.__db = DataStore(path)
