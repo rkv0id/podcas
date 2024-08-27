@@ -1,6 +1,6 @@
 from threading import Lock
 
-from .datastore import _DataStore
+from .datastore import Datastore
 
 class PodcastSearch:
     __instance = None
@@ -14,4 +14,4 @@ class PodcastSearch:
 
     def __init__(self, path: str):
         self.source = path
-        self.__db = _DataStore(path)
+        self.__db = Datastore(path)

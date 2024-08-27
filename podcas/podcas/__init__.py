@@ -3,7 +3,6 @@ import duckdb
 from .podcastsearch import PodcastSearch
 
 # Vector similarity search extension
-duckdb.execute("install vss")
-duckdb.execute("load vss")
+duckdb.install_extension("vss")
 
-PodcastSearch("../data/database.db")
+PodcastSearch("../data/light.db")
