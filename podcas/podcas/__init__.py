@@ -4,4 +4,4 @@ duckdb.install_extension("vss")
 
 # testing start
 from .podcastsearch import PodcastSearch
-PodcastSearch("../data/light.db")
+PodcastSearch("../data/mid.db")

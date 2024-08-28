@@ -77,7 +77,10 @@ class DataStore:
         ]
 
         category_embeddings = self.embedder.embed_categories(categories)
-        dim = len(category_embeddings[categories[0]])
+        dim = (
+            len(category_embeddings[categories[0]])
+            if len(categories) > 0 else Embedder.DEFAULT_VEC_SIZE
+        )
         values_str = [
             f"('{category}', {vector})"
             for category, vector in category_embeddings.items()
@@ -107,7 +110,10 @@ class DataStore:
         ids = [idx for idx, _, _ in reviews]
 
         review_embeddings = self.embedder.embed_reviews(reviews)
-        dim = len(review_embeddings[0])
+        dim = (
+            len(review_embeddings[0])
+            if len(review_embeddings) > 0 else Embedder.DEFAULT_VEC_SIZE
+        )
 
         cases = [
             f"WHEN rev_id = {rev_id} THEN {agg_emb}"
@@ -115,24 +121,22 @@ class DataStore:
         ]
 
         DataStore._with_transaction(conn, [
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec_review",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_review FLOAT[{dim}]",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec FLOAT[{dim}]",
             # TODO: partition or parallelize over cursors
             f"""
             UPDATE {DataStore.REVIEW_TAB} SET
-            vec_review = CASE {" ".join(cases)} END""",
+            vec = {
+                'CASE ' + ' '.join(cases) + ' END'
+                if len(cases) > 0 else 'vec'
+            }""",
             f"""
             CREATE INDEX idx_rev
-            ON {DataStore.REVIEW_TAB} USING HNSW (vec_review)
+            ON {DataStore.REVIEW_TAB} USING HNSW (vec)
             WITH (metric = 'cosine')"""
         ])
 
     def _embed_podcasts(self, conn: duckdb.DuckDBPyConnection) -> None:
-        podcast_keys = conn.sql(f"""
-        SELECT title, author
-        FROM {DataStore.PODCAST_TAB}
-        GROUP BY title, author""").fetchall()
-
         desc_rows = conn.execute(f"""
         SELECT res.title, res.author, res.descriptions
         FROM (
@@ -141,7 +145,7 @@ class DataStore:
                 FILTER (WHERE description IS NOT NULL) AS descriptions
             FROM {DataStore.PODCAST_TAB}
             GROUP BY title, author
-        ) res WHERE res.descriptions is not null
+        ) res WHERE res.descriptions IS NOT NULL
         """).fetchall()
 
         review_rows = conn.execute(f"""
@@ -158,15 +162,20 @@ class DataStore:
             [reviews for _, _, reviews in review_rows]
         )
 
-        desc_dim, rev_dim = len(desc_embeds[0]), len(rev_embeds[0])
+        desc_dim, rev_dim = (
+            len(desc_embeds[0]) if len(desc_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE,
+            len(rev_embeds[0]) if len(rev_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE
+        )
 
         desc_cases = [
-            f"WHEN title = {row[0]} AND author = {row[1]} THEN {emb}"
+            f"""WHEN title = '{row[0].replace("'", "''")}'
+            AND author = '{row[1].replace("'", "''")}' THEN {emb}"""
             for row, emb in zip(desc_rows, desc_embeds)
         ]
 
         rev_cases = [
-            f"WHEN title = {row[0]} AND author = {row[1]} THEN {emb}"
+            f"""WHEN title = '{row[0].replace("'", "''")}'
+            AND author = '{row[1].replace("'", "''")}' THEN {emb}"""
             for row, emb in zip(desc_rows, rev_embeds)
         ]
 
@@ -179,18 +188,24 @@ class DataStore:
                 vec_desc FLOAT[{desc_dim}],
                 vec_rev FLOAT[{rev_dim}]
             )""",
-            (
-                f"""
-                INSERT INTO {DataStore.PODCAST_EMBEDS}
-                (title, author) VALUES (?, ?)""",
-                podcast_keys
-            ),
+            f"""
+            INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author)
+            SELECT title, author
+            FROM {DataStore.PODCAST_TAB}
+            WHERE title IS NOT NULL OR author IS NOT NULL
+            GROUP BY title, author""",
             f"""
             UPDATE {DataStore.PODCAST_EMBEDS} SET
-            vec_desc = CASE {" ".join(desc_cases)} END""",
+            vec_desc = {
+                'CASE ' + ' '.join(desc_cases) + ' END'
+                if len(desc_cases) > 0 else 'vec_desc'
+            }""",
             f"""
             UPDATE {DataStore.PODCAST_EMBEDS} SET
-            vec_rev = CASE {" ".join(rev_cases)} END""",
+            vec_rev = {
+                'CASE ' + ' '.join(rev_cases) + ' END'
+                if len(rev_cases) > 0 else 'vec_rev'
+            }""",
             f"""
             CREATE INDEX idx_pod_desc
             ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_desc)
@@ -253,7 +268,7 @@ class DataStore:
         SELECT COUNT(column_name)
         FROM information_schema.columns
         WHERE table_name = '{DataStore.REVIEW_TAB}'
-        AND column_name IN ('rev_id', 'vec_review')
+        AND column_name IN ('rev_id', 'vec')
         """
         result, *_ = conn.sql(query).fetchall()
         return result[0] == 2
@@ -310,16 +325,20 @@ class DataStore:
             conn: duckdb.DuckDBPyConnection,
             queries: list[str | tuple[str, list[Any] | dict[str, Any]]]
     ) -> None:
+        idx = 0
         conn.begin()
         try:
-            for query in queries:
+            while idx < len(queries):
+                query = queries[idx]
                 if isinstance(query, tuple):
                     query_str, params = query
                     conn.execute(query_str, params)
                 else: conn.execute(query)
+                idx += 1
             conn.commit()
         except Exception as e:
             DataStore._logger.error(f'Error occured during transaction: {e}', exc_info=True)
+            DataStore._logger.debug(f'Failed query: {queries[idx]}')
             DataStore._logger.debug('Rolling back...')
             conn.rollback()
             raise

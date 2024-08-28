@@ -3,6 +3,7 @@ from sentence_transformers import SentenceTransformer
 
 
 class Embedder:
+    DEFAULT_VEC_SIZE = 128
     _logger = getLogger(f"{__name__}.{__qualname__}")
 
     def __init__(
@@ -24,7 +25,8 @@ class Embedder:
         Embedder._logger.info("Embedding categories...")
         embeddings = self.cat_embedder.encode(
             categories,
-            show_progress_bar=True
+            show_progress_bar=True,
+            batch_size=128
         )
 
         return {
@@ -44,7 +46,8 @@ class Embedder:
         Embedder._logger.info("Embedding reviews...")
         embeddings = self.rev_embedder.encode(
             aggregated,
-            show_progress_bar = True
+            show_progress_bar = True,
+            batch_size=64
         )
 
         return [vec.tolist() for vec in embeddings]
@@ -73,14 +76,16 @@ class Embedder:
         Embedder._logger.info("Embedding podcasts descriptions...")
         desc_embeds = self.pod_embedder.encode(
             agg_descriptions,
-            show_progress_bar=True
-        )
+            show_progress_bar=True,
+            batch_size=64
+        ) if len(agg_descriptions) > 0 else []
 
         Embedder._logger.info("Embedding podcasts reviews...")
         rev_embeds = self.pod_embedder.encode(
             agg_reviews,
-            show_progress_bar=True
-        )
+            show_progress_bar=True,
+            batch_size=64
+        ) if len(agg_reviews) > 0 else []
 
         return (
             [vec.tolist() for vec in desc_embeds],
