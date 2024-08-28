@@ -1,7 +1,7 @@
 from contextlib import contextmanager
-from typing import Generator
+from typing import Any, Generator
 from os.path import abspath
-import logging, duckdb
+import logging, pickle, duckdb
 
 from .embedder import Embedder
 
@@ -20,8 +20,8 @@ class DataStore:
             self,
             path: str,
             category_model: str = 'all-MiniLM-L6-v2',
-            review_model: str ='distiluse-base-multilingual-cased-v1',
-            podcast_model: str ='distiluse-base-multilingual-cased-v1'
+            review_model: str = 'distiluse-base-multilingual-cased-v1',
+            podcast_model: str = 'distiluse-base-multilingual-cased-v1'
     ):
         self.file = abspath(path)
         self.embedder = Embedder(
@@ -47,8 +47,8 @@ class DataStore:
 
     def _init_db(self) -> None:
         with self._conn() as conn:
-            if not DataStore._assert_meta(conn, self.embedder.models):
-                DataStore._record_meta(conn, self.embedder.models)
+            if not self._assert_meta(conn):
+                self._record_meta(conn)
                 DataStore._prep_categories(conn)
                 DataStore._prep_reviews(conn)
                 DataStore._prep_podcasts(conn)
@@ -56,6 +56,7 @@ class DataStore:
                 self._embed_reviews(conn)
                 self._embed_podcasts(conn)
             else:
+                self._load_reducers(conn)
                 if not DataStore._assert_categories(conn):
                     DataStore._prep_categories(conn)
                     self._embed_categories(conn)
@@ -89,13 +90,18 @@ class DataStore:
             CREATE TABLE {DataStore.CATEGORY_EMBEDS}(
                 name VARCHAR PRIMARY KEY,
                 vec FLOAT[{dim}])""",
+            # TODO: partition or parallelize over cursors
             f"""
             INSERT INTO {DataStore.CATEGORY_EMBEDS}
             VALUES {', '.join(values_str)}""",
             f"""
             CREATE INDEX idx_cat
             ON {DataStore.CATEGORY_EMBEDS} USING HNSW (vec)
-            WITH (metric = 'cosine')"""
+            WITH (metric = 'cosine')""",
+            (
+                f"UPDATE {DataStore.META_TAB} pca_cat = ?",
+                [pickle.dumps(self.embedder.cat_reducer)]
+            )
         ])
 
     def _embed_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
@@ -105,64 +111,37 @@ class DataStore:
         """).fetchall()
         ids = [idx for idx, _, _ in reviews]
 
-        title_embeddings, content_embeddings, review_embeddings = (
-            self.embedder.embed_reviews(reviews)
-        )
-        dim = len(title_embeddings[0])
+        review_embeddings = self.embedder.embed_reviews(reviews)
+        dim = len(review_embeddings[0])
 
-        title_case_stmts = [
-            f"WHEN rev_id = {rev_id} THEN {title_emb}"
-            for rev_id, title_emb in zip(ids, title_embeddings)
-        ]
-        cont_case_stmts = [
-            f"WHEN rev_id = {rev_id} THEN {cont_emb}"
-            for rev_id, cont_emb in zip(ids, content_embeddings)
-        ]
-        agg_case_stmts = [
+        case_stmts = [
             f"WHEN rev_id = {rev_id} THEN {agg_emb}"
             for rev_id, agg_emb in zip(ids, review_embeddings)
         ]
 
         DataStore._with_transaction(conn, [
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec_title",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_title FLOAT[{dim}]",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec_content",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_content FLOAT[{dim}]",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec_aggregated",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_aggregated FLOAT[{dim}]",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec_review",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_review FLOAT[{dim}]",
             # TODO: partition or parallelize over cursors
             f"""
             UPDATE {DataStore.REVIEW_TAB}
-            SET vec_title = CASE
-                {" ".join(title_case_stmts)}
-            END,
-            vec_content = CASE
-                {" ".join(cont_case_stmts)}
-            END,
-            vec_aggregated = CASE
-                {" ".join(agg_case_stmts)}
-            END,""",
+            vec_review = CASE {" ".join(case_stmts)} END""",
             f"""
-            CREATE INDEX idx_rev_title
-            ON {DataStore.REVIEW_TAB} USING HNSW (vec_title)
+            CREATE INDEX idx_rev
+            ON {DataStore.REVIEW_TAB} USING HNSW (vec_review)
             WITH (metric = 'cosine')""",
-            f"""
-            CREATE INDEX idx_rev_content
-            ON {DataStore.REVIEW_TAB} USING HNSW (vec_content)
-            WITH (metric = 'cosine')""",
-            f"""
-            CREATE INDEX idx_rev_aggregated
-            ON {DataStore.REVIEW_TAB} USING HNSW (vec_aggregated)
-            WITH (metric = 'cosine')"""
+            (
+                f"UPDATE {DataStore.META_TAB} pca_rev = ?",
+                [pickle.dumps(self.embedder.rev_reducer)]
+            )
         ])
 
-    def _embed_podcasts(self, conn: duckdb.DuckDBPyConnection) -> None: ...
+    def _embed_podcasts(self, conn: duckdb.DuckDBPyConnection) -> None:
+        query = f"""
+        SELECT DISTINCT title, author
+        FROM {DataStore.PODCAST_TAB}"""
 
-    @staticmethod
-    def _assert_meta(
-            conn: duckdb.DuckDBPyConnection,
-            models: dict[str, str]
-    ) -> bool:
+    def _assert_meta(self, conn: duckdb.DuckDBPyConnection) -> bool:
         table_exists = conn.execute(f"""
             SELECT COUNT(table_name)
             FROM information_schema.tables
@@ -176,9 +155,42 @@ class DataStore:
         WHERE mod_cat = $category
         AND mod_rev = $review
         AND mod_pod = $podcast
-        """, models).fetchone()
+        """, self.embedder.model_names).fetchone()
 
         return models_exist is not None and models_exist[0] == 1
+
+    def _record_meta(self, conn: duckdb.DuckDBPyConnection) -> None:
+        DataStore._with_transaction(conn, [
+            f"DROP TABLE IF EXISTS {DataStore.META_TAB}",
+            f"""
+            CREATE TABLE {DataStore.META_TAB}(
+                mod_cat VARCHAR,
+                mod_rev VARCHAR,
+                mod_pod VARCHAR,
+                pca_cat BLOB,
+                pca_rev BLOB,
+                pca_pod_about BLOB,
+                pca_pod_review BLOB
+            )""",
+            (
+                f"""
+                INSERT INTO {DataStore.META_TAB}
+                (mod_cat, mod_rev, mod_pod) VALUES
+                ($category, $review, $podcast)""",
+                self.embedder.model_names,
+            )
+        ])
+
+    def _load_reducers(self, conn: duckdb.DuckDBPyConnection) -> None:
+        result = conn.execute(f"""
+        SELECT pca_cat, pca_rev, pca_pod_about, pca_pod_review
+        FROM {DataStore.META_TAB}""").fetchone()
+
+        if result:
+            self.embedder.cat_reducer = pickle.loads(result[0])
+            self.embedder.rev_reducer = pickle.loads(result[1])
+            self.embedder.pod_about_reducer = pickle.loads(result[2])
+            self.embedder.pod_review_reducer = pickle.loads(result[3])
 
     @staticmethod
     def _assert_categories(conn: duckdb.DuckDBPyConnection) -> bool:
@@ -196,10 +208,10 @@ class DataStore:
         SELECT COUNT(column_name)
         FROM information_schema.columns
         WHERE table_name = '{DataStore.REVIEW_TAB}'
-        AND column_name IN ('rev_id', 'vec_title', 'vec_content', 'vec_aggregated')
+        AND column_name IN ('rev_id', 'vec_review')
         """
         result, *_ = conn.sql(query).fetchall()
-        return result[0] == 4
+        return result[0] == 2
 
     @staticmethod
     def _assert_podcasts(conn: duckdb.DuckDBPyConnection) -> bool:
@@ -210,30 +222,6 @@ class DataStore:
         """
         result, *_ = conn.sql(query).fetchall()
         return result[0] == 1
-
-    @staticmethod
-    def _record_meta(
-            conn: duckdb.DuckDBPyConnection,
-            models: dict[str, str]
-    ) -> None:
-        model_names = [
-            models['category'],
-            models['review'],
-            models['podcast']
-        ]
-
-        DataStore._with_transaction(conn, [
-            f"DROP TABLE IF EXISTS {DataStore.META_TAB}",
-            f"""
-            CREATE TABLE {DataStore.META_TAB}(
-                mod_cat VARCHAR,
-                mod_rev VARCHAR,
-                mod_pod VARCHAR
-            )""",
-            f"""
-            INSERT INTO {DataStore.META_TAB}
-            VALUES ('{"', '".join(model_names)}')"""
-        ])
 
     @staticmethod
     def _prep_categories(conn: duckdb.DuckDBPyConnection) -> None:
@@ -275,11 +263,15 @@ class DataStore:
     @staticmethod
     def _with_transaction(
             conn: duckdb.DuckDBPyConnection,
-            queries: list[str]
+            queries: list[str | tuple[str, list[Any] | dict[str, Any]]]
     ) -> None:
         conn.begin()
         try:
-            for query in queries: conn.execute(query)
+            for query in queries:
+                if isinstance(query, tuple):
+                    query_str, params = query
+                    conn.execute(query_str, params)
+                else: conn.execute(query)
             conn.commit()
         except Exception as e:
             DataStore._logger.error(f'Error occured during transaction: {e}', exc_info=True)
