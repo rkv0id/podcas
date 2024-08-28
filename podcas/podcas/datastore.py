@@ -19,16 +19,10 @@ class DataStore:
     def __init__(
             self,
             path: str,
-            category_model: str = 'all-MiniLM-L6-v2',
-            review_model: str = 'distiluse-base-multilingual-cased-v1',
-            podcast_model: str = 'distiluse-base-multilingual-cased-v1'
+            embedder: Embedder
     ):
         self.file = abspath(path)
-        self.embedder = Embedder(
-            category_model = category_model,
-            review_model = review_model,
-            podcast_model = podcast_model
-        )
+        self.embedder = embedder
         self._init_db()
 
     @contextmanager
@@ -81,33 +75,34 @@ class DataStore:
             len(category_embeddings[categories[0]])
             if len(categories) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
-        values_str = [
-            f"('{category}', {vector})"
-            for category, vector in category_embeddings.items()
-        ]
 
         DataStore._with_transaction(conn, [
             f"DROP TABLE IF EXISTS {DataStore.CATEGORY_EMBEDS}",
             f"""
             CREATE TABLE {DataStore.CATEGORY_EMBEDS}(
                 name VARCHAR PRIMARY KEY,
-                vec FLOAT[{dim}])""",
-            # TODO: partition or parallelize over cursors
-            f"""
-            INSERT INTO {DataStore.CATEGORY_EMBEDS}
-            VALUES {', '.join(values_str)}""",
-            f"""
-            CREATE INDEX idx_cat
-            ON {DataStore.CATEGORY_EMBEDS} USING HNSW (vec)
-            WITH (metric = 'cosine')"""
+                vec FLOAT[{dim}])"""
         ])
+
+        conn.executemany(
+            f"""
+            INSERT INTO {DataStore.CATEGORY_EMBEDS} VALUES (?, ?)""",
+            [
+                [category, vector]
+                for category, vector in category_embeddings.items()
+            ]
+        )
+
+        conn.sql(f"""
+        CREATE INDEX idx_cat
+        ON {DataStore.CATEGORY_EMBEDS} USING HNSW (vec)
+        WITH (metric = 'cosine')""")
 
     def _embed_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
         reviews: list[tuple[str, str, str]] = conn.sql(f"""
         SELECT rev_id, title, content
         FROM {DataStore.REVIEW_TAB}
         """).fetchall()
-        ids = [idx for idx, _, _ in reviews]
 
         review_embeddings = self.embedder.embed_reviews(reviews)
         dim = (
@@ -115,26 +110,24 @@ class DataStore:
             if len(review_embeddings) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
 
-        cases = [
-            f"WHEN rev_id = {rev_id} THEN {agg_emb}"
-            for rev_id, agg_emb in zip(ids, review_embeddings)
-        ]
-
         DataStore._with_transaction(conn, [
             f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec FLOAT[{dim}]",
-            # TODO: partition or parallelize over cursors
-            f"""
-            UPDATE {DataStore.REVIEW_TAB} SET
-            vec = {
-                'CASE ' + ' '.join(cases) + ' END'
-                if len(cases) > 0 else 'vec'
-            }""",
-            f"""
-            CREATE INDEX idx_rev
-            ON {DataStore.REVIEW_TAB} USING HNSW (vec)
-            WITH (metric = 'cosine')"""
+            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec FLOAT[{dim}]"
         ])
+
+        ids = [(idx,) for idx, _, _ in reviews]
+        for update in DataStore._generate_updates(
+                DataStore.REVIEW_TAB,
+                'vec',
+                review_embeddings,
+                ('rev_id',),
+                ids
+        ): conn.execute(update)
+
+        conn.sql(f"""
+        CREATE INDEX idx_rev
+        ON {DataStore.REVIEW_TAB} USING HNSW (vec)
+        WITH (metric = 'cosine')""")
 
     def _embed_podcasts(self, conn: duckdb.DuckDBPyConnection) -> None:
         desc_rows = conn.execute(f"""
@@ -167,18 +160,6 @@ class DataStore:
             len(rev_embeds[0]) if len(rev_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
 
-        desc_cases = [
-            f"""WHEN title = '{row[0].replace("'", "''")}'
-            AND author = '{row[1].replace("'", "''")}' THEN {emb}"""
-            for row, emb in zip(desc_rows, desc_embeds)
-        ]
-
-        rev_cases = [
-            f"""WHEN title = '{row[0].replace("'", "''")}'
-            AND author = '{row[1].replace("'", "''")}' THEN {emb}"""
-            for row, emb in zip(desc_rows, rev_embeds)
-        ]
-
         DataStore._with_transaction(conn, [
             f"DROP TABLE IF EXISTS {DataStore.PODCAST_EMBEDS}",
             f"""
@@ -193,19 +174,31 @@ class DataStore:
             SELECT title, author
             FROM {DataStore.PODCAST_TAB}
             WHERE title IS NOT NULL OR author IS NOT NULL
-            GROUP BY title, author""",
-            f"""
-            UPDATE {DataStore.PODCAST_EMBEDS} SET
-            vec_desc = {
-                'CASE ' + ' '.join(desc_cases) + ' END'
-                if len(desc_cases) > 0 else 'vec_desc'
-            }""",
-            f"""
-            UPDATE {DataStore.PODCAST_EMBEDS} SET
-            vec_rev = {
-                'CASE ' + ' '.join(rev_cases) + ' END'
-                if len(rev_cases) > 0 else 'vec_rev'
-            }""",
+            GROUP BY title, author"""
+        ])
+
+        title_author_couples = [
+            (
+                f"""'{title.replace("'", "''")}'""",
+                f"""'{author.replace("'", "''")}'""")
+            for title, author, _ in desc_rows
+        ]
+        for update in DataStore._generate_updates(
+                DataStore.PODCAST_EMBEDS,
+                'vec_desc',
+                desc_embeds,
+                ('title', 'author'),
+                title_author_couples
+        ): conn.execute(update)
+        for update in DataStore._generate_updates(
+                DataStore.PODCAST_EMBEDS,
+                'vec_rev',
+                rev_embeds,
+                ('title', 'author'),
+                title_author_couples
+        ): conn.execute(update)
+
+        DataStore._with_transaction(conn, [
             f"""
             CREATE INDEX idx_pod_desc
             ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_desc)
@@ -342,3 +335,20 @@ class DataStore:
             DataStore._logger.debug('Rolling back...')
             conn.rollback()
             raise
+
+    @staticmethod
+    def _generate_updates(
+            table: str,
+            column: str,
+            values: list[Any],
+            condition_cols: tuple[str, ...],
+            condition_values: list[tuple[Any, ...]]
+    ):
+        for condition, value in zip(condition_values, values):
+            yield f"""UPDATE {table} SET {column} = {value}
+            WHERE {
+                ' AND '.join([
+                    f"{col} = {val}"
+                    for col, val in zip(condition_cols, condition)
+                ])
+            }"""
