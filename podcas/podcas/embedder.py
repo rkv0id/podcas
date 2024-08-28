@@ -1,6 +1,5 @@
 from logging import getLogger
 from sentence_transformers import SentenceTransformer
-from sklearn.decomposition import PCA
 
 
 class Embedder:
@@ -15,12 +14,6 @@ class Embedder:
         self.cat_embedder = SentenceTransformer(category_model)
         self.rev_embedder = SentenceTransformer(review_model)
         self.pod_embedder = SentenceTransformer(podcast_model)
-
-        self.cat_reducer = PCA(n_components='mle')
-        self.rev_reducer = PCA(n_components='mle')
-        self.pod_about_reducer = PCA(n_components='mle')
-        self.pod_review_reducer = PCA(n_components='mle')
-
         self.model_names = {
             'category': category_model,
             'review': review_model,
@@ -34,12 +27,9 @@ class Embedder:
             show_progress_bar=True
         )
 
-        Embedder._logger.info("Reducing categories embeddings...")
-        reduced_embeddings = self.cat_reducer.fit_transform(embeddings)
-
         return {
             category: embedding.tolist()
-            for category, embedding in zip(categories, reduced_embeddings)
+            for category, embedding in zip(categories, embeddings)
         }
 
     def embed_reviews(
@@ -57,9 +47,42 @@ class Embedder:
             show_progress_bar = True
         )
 
-        Embedder._logger.info("Reducing reviews embeddings...")
-        reduced_embeddings = self.rev_reducer.fit_transform(embeddings)
+        return [vec.tolist() for vec in embeddings]
 
-        return [vec.tolist() for vec in reduced_embeddings]
+    def embed_podcasts(
+            self,
+            descriptions: list[list[str]],
+            reviews: list[list[tuple[str, str]]]
+    ) -> tuple[list[list[float]], list[list[float]]]:
+        agg_descriptions = [
+            '\n'.join([
+                f"EP: {description}"
+                for description in descs
+            ])
+            for descs in descriptions
+        ]
 
-    def embed_podcasts(self) -> None: ...
+        agg_reviews = [
+            '\n'.join([
+                f"title:{r_title} - content:{r_content}"
+                for r_title, r_content in review_pairs
+            ])
+            for review_pairs in reviews
+        ]
+
+        Embedder._logger.info("Embedding podcasts descriptions...")
+        desc_embeds = self.pod_embedder.encode(
+            agg_descriptions,
+            show_progress_bar=True
+        )
+
+        Embedder._logger.info("Embedding podcasts reviews...")
+        rev_embeds = self.pod_embedder.encode(
+            agg_reviews,
+            show_progress_bar=True
+        )
+
+        return (
+            [vec.tolist() for vec in desc_embeds],
+            [vec.tolist() for vec in rev_embeds]
+        )

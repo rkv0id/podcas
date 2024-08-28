@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, Generator
 from os.path import abspath
-import logging, pickle, duckdb
+import logging, duckdb
 
 from .embedder import Embedder
 
@@ -56,7 +56,6 @@ class DataStore:
                 self._embed_reviews(conn)
                 self._embed_podcasts(conn)
             else:
-                self._load_reducers(conn)
                 if not DataStore._assert_categories(conn):
                     DataStore._prep_categories(conn)
                     self._embed_categories(conn)
@@ -97,11 +96,7 @@ class DataStore:
             f"""
             CREATE INDEX idx_cat
             ON {DataStore.CATEGORY_EMBEDS} USING HNSW (vec)
-            WITH (metric = 'cosine')""",
-            (
-                f"UPDATE {DataStore.META_TAB} pca_cat = ?",
-                [pickle.dumps(self.embedder.cat_reducer)]
-            )
+            WITH (metric = 'cosine')"""
         ])
 
     def _embed_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
@@ -114,7 +109,7 @@ class DataStore:
         review_embeddings = self.embedder.embed_reviews(reviews)
         dim = len(review_embeddings[0])
 
-        case_stmts = [
+        cases = [
             f"WHEN rev_id = {rev_id} THEN {agg_emb}"
             for rev_id, agg_emb in zip(ids, review_embeddings)
         ]
@@ -124,22 +119,87 @@ class DataStore:
             f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec_review FLOAT[{dim}]",
             # TODO: partition or parallelize over cursors
             f"""
-            UPDATE {DataStore.REVIEW_TAB}
-            vec_review = CASE {" ".join(case_stmts)} END""",
+            UPDATE {DataStore.REVIEW_TAB} SET
+            vec_review = CASE {" ".join(cases)} END""",
             f"""
             CREATE INDEX idx_rev
             ON {DataStore.REVIEW_TAB} USING HNSW (vec_review)
-            WITH (metric = 'cosine')""",
-            (
-                f"UPDATE {DataStore.META_TAB} pca_rev = ?",
-                [pickle.dumps(self.embedder.rev_reducer)]
-            )
+            WITH (metric = 'cosine')"""
         ])
 
     def _embed_podcasts(self, conn: duckdb.DuckDBPyConnection) -> None:
-        query = f"""
-        SELECT DISTINCT title, author
-        FROM {DataStore.PODCAST_TAB}"""
+        podcast_keys = conn.sql(f"""
+        SELECT title, author
+        FROM {DataStore.PODCAST_TAB}
+        GROUP BY title, author""").fetchall()
+
+        desc_rows = conn.execute(f"""
+        SELECT res.title, res.author, res.descriptions
+        FROM (
+            SELECT
+                title, author, LIST(description)
+                FILTER (WHERE description IS NOT NULL) AS descriptions
+            FROM {DataStore.PODCAST_TAB}
+            GROUP BY title, author
+        ) res WHERE res.descriptions is not null
+        """).fetchall()
+
+        review_rows = conn.execute(f"""
+        SELECT
+            p.title, p.author,
+            LIST((r.title, r.content)) AS review_pairs
+        FROM {DataStore.PODCAST_TAB} p
+        JOIN {DataStore.REVIEW_TAB} r
+        ON p.podcast_id = r.podcast_id
+        GROUP BY p.author, p.title""").fetchall()
+
+        desc_embeds, rev_embeds = self.embedder.embed_podcasts(
+            [descriptions for _, _, descriptions in desc_rows],
+            [reviews for _, _, reviews in review_rows]
+        )
+
+        desc_dim, rev_dim = len(desc_embeds[0]), len(rev_embeds[0])
+
+        desc_cases = [
+            f"WHEN title = {row[0]} AND author = {row[1]} THEN {emb}"
+            for row, emb in zip(desc_rows, desc_embeds)
+        ]
+
+        rev_cases = [
+            f"WHEN title = {row[0]} AND author = {row[1]} THEN {emb}"
+            for row, emb in zip(desc_rows, rev_embeds)
+        ]
+
+        DataStore._with_transaction(conn, [
+            f"DROP TABLE IF EXISTS {DataStore.PODCAST_EMBEDS}",
+            f"""
+            CREATE TABLE {DataStore.PODCAST_EMBEDS}(
+                title VARCHAR,
+                author VARCHAR,
+                vec_desc FLOAT[{desc_dim}],
+                vec_rev FLOAT[{rev_dim}]
+            )""",
+            (
+                f"""
+                INSERT INTO {DataStore.PODCAST_EMBEDS}
+                (title, author) VALUES (?, ?)""",
+                podcast_keys
+            ),
+            f"""
+            UPDATE {DataStore.PODCAST_EMBEDS} SET
+            vec_desc = CASE {" ".join(desc_cases)} END""",
+            f"""
+            UPDATE {DataStore.PODCAST_EMBEDS} SET
+            vec_rev = CASE {" ".join(rev_cases)} END""",
+            f"""
+            CREATE INDEX idx_pod_desc
+            ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_desc)
+            WITH (metric = 'cosine')""",
+            f"""
+            CREATE INDEX idx_pod_rev
+            ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_rev)
+            WITH (metric = 'cosine')"""
+        ])
 
     def _assert_meta(self, conn: duckdb.DuckDBPyConnection) -> bool:
         table_exists = conn.execute(f"""
@@ -166,11 +226,7 @@ class DataStore:
             CREATE TABLE {DataStore.META_TAB}(
                 mod_cat VARCHAR,
                 mod_rev VARCHAR,
-                mod_pod VARCHAR,
-                pca_cat BLOB,
-                pca_rev BLOB,
-                pca_pod_about BLOB,
-                pca_pod_review BLOB
+                mod_pod VARCHAR
             )""",
             (
                 f"""
@@ -180,17 +236,6 @@ class DataStore:
                 self.embedder.model_names,
             )
         ])
-
-    def _load_reducers(self, conn: duckdb.DuckDBPyConnection) -> None:
-        result = conn.execute(f"""
-        SELECT pca_cat, pca_rev, pca_pod_about, pca_pod_review
-        FROM {DataStore.META_TAB}""").fetchone()
-
-        if result:
-            self.embedder.cat_reducer = pickle.loads(result[0])
-            self.embedder.rev_reducer = pickle.loads(result[1])
-            self.embedder.pod_about_reducer = pickle.loads(result[2])
-            self.embedder.pod_review_reducer = pickle.loads(result[3])
 
     @staticmethod
     def _assert_categories(conn: duckdb.DuckDBPyConnection) -> bool:
