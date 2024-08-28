@@ -76,6 +76,7 @@ class DataStore:
             if len(categories) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
 
+        DataStore._logger.info('Creating categories vector store...')
         DataStore._with_transaction(conn, [
             f"DROP TABLE IF EXISTS {DataStore.CATEGORY_EMBEDS}",
             f"""
@@ -84,6 +85,7 @@ class DataStore:
                 vec FLOAT[{dim}])"""
         ])
 
+        DataStore._logger.info('Ingesting categories embeddings...')
         conn.executemany(
             f"""
             INSERT INTO {DataStore.CATEGORY_EMBEDS} VALUES (?, ?)""",
@@ -93,6 +95,7 @@ class DataStore:
             ]
         )
 
+        DataStore._logger.info('Indexing categories vector space...')
         conn.sql(f"""
         CREATE INDEX idx_cat
         ON {DataStore.CATEGORY_EMBEDS} USING HNSW (vec)
@@ -115,6 +118,7 @@ class DataStore:
             f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec FLOAT[{dim}]"
         ])
 
+        DataStore._logger.info('Ingesting reviews embeddings...')
         ids = [(idx,) for idx, _, _ in reviews]
         for update in DataStore._generate_updates(
                 DataStore.REVIEW_TAB,
@@ -124,6 +128,7 @@ class DataStore:
                 ids
         ): conn.execute(update)
 
+        DataStore._logger.info('Indexing reviews vector space...')
         conn.sql(f"""
         CREATE INDEX idx_rev
         ON {DataStore.REVIEW_TAB} USING HNSW (vec)
@@ -160,6 +165,7 @@ class DataStore:
             len(rev_embeds[0]) if len(rev_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
 
+        DataStore._logger.info('Creating podcasts vector store...')
         DataStore._with_transaction(conn, [
             f"DROP TABLE IF EXISTS {DataStore.PODCAST_EMBEDS}",
             f"""
@@ -183,6 +189,8 @@ class DataStore:
                 f"""'{author.replace("'", "''")}'""")
             for title, author, _ in desc_rows
         ]
+
+        DataStore._logger.info('Ingesting podcasts description embeddings...')
         for update in DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
                 'vec_desc',
@@ -190,6 +198,8 @@ class DataStore:
                 ('title', 'author'),
                 title_author_couples
         ): conn.execute(update)
+
+        DataStore._logger.info('Ingesting podcasts review embeddings...')
         for update in DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
                 'vec_rev',
@@ -198,6 +208,7 @@ class DataStore:
                 title_author_couples
         ): conn.execute(update)
 
+        DataStore._logger.info('Indexing podcasts vector space...')
         DataStore._with_transaction(conn, [
             f"""
             CREATE INDEX idx_pod_desc
