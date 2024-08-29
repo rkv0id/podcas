@@ -25,19 +25,38 @@ class DataStore:
         self.embedder = embedder
         self._init_db()
 
-    @contextmanager
-    def _conn(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
-        connection = duckdb.connect(self.file, config = {'threads': 1})
-        connection.load_extension('vss')
-        connection.execute("SET hnsw_enable_experimental_persistence = true")
+    def get_reviews(
+            self,
+            top: int,
+            score_rating: tuple[float, float],
+            query_embedding: list[float] | None,
+            rating_boost: bool
+    ) -> list[tuple[str, str, float]]:
+        query = "SELECT title, content,"
 
-        try: yield connection
-        except Exception as e:
-            DataStore._logger.error(
-                f'Could not obtain database connection curosr: {e}',
-                exc_info=True
-            )
-        finally: connection.close()
+        if not query_embedding: query += ' 1'
+        else:
+            score = f"""
+            (
+                1 + array_cosine_similarity(vec,
+                {query_embedding}::FLOAT[{len(query_embedding)}])
+            ) / 2
+            """
+            if rating_boost: score += "* rating / 5.0"
+            query += score
+
+        query += f"""
+        AS score
+        FROM {DataStore.REVIEW_TAB}
+        WHERE rating BETWEEN {score_rating[0]} AND {score_rating[1]}
+        ORDER BY score DESC, rating DESC
+        LIMIT {top}
+        """
+
+        with self._conn() as conn:
+            result = conn.sql(query).fetchall()
+
+        return result
 
     def _init_db(self) -> None:
         with self._conn() as conn:
@@ -323,6 +342,20 @@ class DataStore:
                 author = LOWER(author)
             """
         ])
+
+    @contextmanager
+    def _conn(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+        connection = duckdb.connect(self.file, config = {'threads': 1})
+        connection.load_extension('vss')
+        connection.execute("SET hnsw_enable_experimental_persistence = true")
+
+        try: yield connection
+        except Exception as e:
+            DataStore._logger.error(
+                f'Could not obtain database connection curosr: {e}',
+                exc_info=True
+            )
+        finally: connection.close()
 
     @staticmethod
     def _with_transaction(
