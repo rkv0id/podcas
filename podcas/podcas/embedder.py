@@ -47,7 +47,7 @@ class Embedder:
         embeddings = self.rev_embedder.encode(
             aggregated,
             show_progress_bar = True,
-            batch_size=64
+            batch_size=32
         )
 
         return [vec.tolist() for vec in embeddings]
@@ -67,8 +67,8 @@ class Embedder:
 
         agg_reviews = [
             '\n'.join([
-                f"title:{r_title} - content:{r_content}"
-                for r_title, r_content in review_pairs
+                f"REV: title:{title} - content:{content}"
+                for title, content in review_pairs
             ])
             for review_pairs in reviews
         ]
@@ -77,14 +77,14 @@ class Embedder:
         desc_embeds = self.pod_embedder.encode(
             agg_descriptions,
             show_progress_bar=True,
-            batch_size=64
+            batch_size=32
         ) if len(agg_descriptions) > 0 else []
 
         Embedder._logger.info("Embedding podcasts reviews...")
-        rev_embeds = self.pod_embedder.encode(
+        rev_embeds = self.rev_embedder.encode(
             agg_reviews,
             show_progress_bar=True,
-            batch_size=64
+            batch_size=32
         ) if len(agg_reviews) > 0 else []
 
         return (
