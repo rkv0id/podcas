@@ -5,7 +5,7 @@ duckdb.install_extension("vss")
 # testing start
 default_embedder = 'multi-qa-MiniLM-L6-cos-v1'
 from .podcastsearch import PodcastSearch
-(
+print(
     PodcastSearch()
         .load(source="../data/mid.db")
         .using(
