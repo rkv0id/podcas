@@ -31,8 +31,8 @@ class DataStore:
             rating_range: tuple[float, float],
             query_embedding: Optional[list[float]],
             rating_boost: bool
-    ) -> list[tuple[str, str, float]]:
-        query = "SELECT title, content,"
+    ) -> list[tuple[str, str, float, float]]:
+        query = "SELECT title, content, rating,"
 
         if not query_embedding: query += ' 1'
         else:
@@ -62,14 +62,27 @@ class DataStore:
     def get_podcasts(
             self,
             top: int,
-            score_rating: tuple[float, float],
+            rating_range: tuple[float, float],
             title: Optional[str],
             author: Optional[str],
             category_embeddings: Optional[list[float]],
             review_embeddings: Optional[list[float]],
             desc_embeddings: Optional[list[float]],
             rating_boost: bool
-    ): return []
+    ) -> list[tuple[str, str, float, float]]:
+        query = "SELECT title, author, rating,"
+
+        query += f"""
+        FROM {DataStore.PODCAST_EMBEDS}
+        WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
+        ORDER BY score DESC, rating DESC
+        LIMIT {top}
+        """
+
+        with self._conn() as conn:
+            result = conn.sql(query).fetchall()
+
+        return result
 
     def _init_db(self) -> None:
         with self._conn() as conn:
@@ -193,14 +206,25 @@ class DataStore:
         ON p.podcast_id = r.podcast_id
         GROUP BY p.author, p.title""").fetchall()
 
-        desc_embeds, rev_embeds = self.embedder.embed_podcasts(
+        category_rows = conn.execute(f"""
+        SELECT
+            p.title, p.author,
+            LIST(c.category) AS categories
+        FROM {DataStore.PODCAST_TAB} p
+        JOIN {DataStore.CATEGORY_TAB} c
+        ON p.podcast_id = c.podcast_id
+        GROUP BY p.author, p.title""").fetchall()
+
+        desc_embeds, rev_embeds, cat_embeds = self.embedder.embed_podcasts(
             [descriptions for _, _, descriptions in desc_rows],
-            [reviews for _, _, reviews in review_rows]
+            [reviews for _, _, reviews in review_rows],
+            [categories for _, _, categories in category_rows]
         )
 
-        desc_dim, rev_dim = (
+        desc_dim, rev_dim, cat_dim = (
             len(desc_embeds[0]) if len(desc_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE,
-            len(rev_embeds[0]) if len(rev_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE
+            len(rev_embeds[0]) if len(rev_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE,
+            len(cat_embeds[0]) if len(cat_embeds) > 0 else Embedder.DEFAULT_VEC_SIZE
         )
 
         DataStore._logger.info('Creating podcasts vector store...')
@@ -217,6 +241,9 @@ class DataStore:
                 vec_rev FLOAT[{rev_dim}]
                 DEFAULT [0 for x in range({rev_dim})]::FLOAT[{rev_dim}],
                 rev_embedded BOOLEAN DEFAULT false
+                vec_cat FLOAT[{cat_dim}]
+                DEFAULT [0 for x in range({cat_dim})]::FLOAT[{cat_dim}],
+                cat_embedded BOOLEAN DEFAULT false
             )""",
             f"""
             INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author, rating)
@@ -258,6 +285,21 @@ class DataStore:
                 title_author_rev_couples
         ): conn.execute(update)
 
+        title_author_cat_couples = [
+            (
+                f"""'{title.replace("'", "''")}'""",
+                f"""'{author.replace("'", "''")}'""")
+            for title, author, _ in category_rows
+        ]
+        DataStore._logger.info('Ingesting podcasts category embeddings...')
+        for update in DataStore._generate_updates(
+                DataStore.PODCAST_EMBEDS,
+                ('vec_cat', 'cat_embedded'),
+                [(embed, 'true') for embed in cat_embeds],
+                ('title', 'author'),
+                title_author_cat_couples
+        ): conn.execute(update)
+
         DataStore._logger.info('Indexing podcasts vector space...')
         DataStore._with_transaction(conn, [
             f"""
@@ -267,6 +309,10 @@ class DataStore:
             f"""
             CREATE INDEX idx_pod_rev
             ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_rev)
+            WITH (metric = 'cosine')""",
+            f"""
+            CREATE INDEX idx_pod_cat
+            ON {DataStore.PODCAST_EMBEDS} USING HNSW (vec_cat)
             WITH (metric = 'cosine')"""
         ])
 

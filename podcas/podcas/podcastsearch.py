@@ -72,7 +72,7 @@ class PodcastSearch:
         self._desc_emb = embeddings[0].tolist()
         return self
 
-    def get(self) -> list[tuple[str, str, float]]:
+    def get(self) -> list[tuple[str, str, float, float]]:
         podcasts = self.__db.get_podcasts(
             self._top,
             (self._min, self._max),

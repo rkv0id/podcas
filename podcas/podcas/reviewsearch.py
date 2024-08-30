@@ -54,7 +54,7 @@ class ReviewSearch:
         self._rating_boosted = boost
         return self
 
-    def get(self) -> list[tuple[str, str, float]]:
+    def get(self) -> list[tuple[str, str, float, float]]:
         reviews = self.__db.get_reviews(
             self._top,
             (self._min, self._max),

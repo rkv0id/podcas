@@ -55,8 +55,9 @@ class Embedder:
     def embed_podcasts(
             self,
             descriptions: list[list[str]],
-            reviews: list[list[tuple[str, str]]]
-    ) -> tuple[list[list[float]], list[list[float]]]:
+            reviews: list[list[tuple[str, str]]],
+            categories: list[list[str]],
+    ) -> tuple[list[list[float]], list[list[float]], list[list[float]]]:
         agg_descriptions = [
             '\n'.join([
                 f"EP: {description}"
@@ -73,6 +74,11 @@ class Embedder:
             for review_pairs in reviews
         ]
 
+        agg_categories = [
+            ', '.join([category for category in podcast_categories])
+            for podcast_categories in categories
+        ]
+
         Embedder._logger.info("Embedding podcasts descriptions...")
         desc_embeds = self.pod_embedder.encode(
             agg_descriptions,
@@ -87,7 +93,15 @@ class Embedder:
             batch_size=32
         ) if len(agg_reviews) > 0 else []
 
+        Embedder._logger.info("Embedding podcasts categories...")
+        cat_embeds = self.cat_embedder.encode(
+            agg_categories,
+            show_progress_bar=True,
+            batch_size=128
+        ) if len(agg_categories) > 0 else []
+
         return (
             [vec.tolist() for vec in desc_embeds],
-            [vec.tolist() for vec in rev_embeds]
+            [vec.tolist() for vec in rev_embeds],
+            [vec.tolist() for vec in cat_embeds]
         )
