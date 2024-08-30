@@ -253,6 +253,7 @@ class DataStore:
         FROM {DataStore.PODCAST_TAB} p
         JOIN {DataStore.CATEGORY_TAB} c
         ON p.podcast_id = c.podcast_id
+        WHERE p.title IS NOT NULL AND p.author IS NOT NULL
         GROUP BY p.author, p.title""").fetchall()
 
         desc_embeds, rev_embeds, cat_embeds = self.embedder.embed_podcasts(
@@ -280,7 +281,7 @@ class DataStore:
                 desc_embedded BOOLEAN DEFAULT false,
                 vec_rev FLOAT[{rev_dim}]
                 DEFAULT [0 for x in range({rev_dim})]::FLOAT[{rev_dim}],
-                rev_embedded BOOLEAN DEFAULT false
+                rev_embedded BOOLEAN DEFAULT false,
                 vec_cat FLOAT[{cat_dim}]
                 DEFAULT [0 for x in range({cat_dim})]::FLOAT[{cat_dim}],
                 cat_embedded BOOLEAN DEFAULT false
@@ -289,7 +290,7 @@ class DataStore:
             INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author, rating)
             SELECT title, author, COALESCE(
                 SUM(average_rating * ratings_count_value)
-                / (NULLIF(SUM(ratings_count_value), 0), 0)
+                / NULLIF(SUM(ratings_count_value), 0), 0)
             FROM {DataStore.PODCAST_TAB}
             WHERE title IS NOT NULL OR author IS NOT NULL
             GROUP BY title, author"""
@@ -455,6 +456,9 @@ class DataStore:
         DataStore._with_transaction(conn, [
             f"""
             ALTER TABLE {DataStore.PODCAST_TAB}
+            DROP COLUMN IF EXISTS ratings_count_value""",
+            f"""
+            ALTER TABLE {DataStore.PODCAST_TAB}
             ADD COLUMN ratings_count_value DOUBLE DEFAULT 0""",
             f"""
             UPDATE {DataStore.PODCAST_TAB}
@@ -518,18 +522,18 @@ class DataStore:
     @staticmethod
     def _generate_updates(
             table: str,
-            column: tuple[str, ...],
+            columns: tuple[str, ...],
             values: list[tuple[Any, ...]],
             condition_cols: tuple[str, ...],
             condition_values: list[tuple[Any, ...]]
     ):
-        for condition, value in zip(condition_values, values):
+        for row_conditions, row_values in zip(condition_values, values):
             yield f"""UPDATE {table} SET
-            {', '.join([f"{col} = {val}" for col, val in values])}
-            {column} = {value}
+            {', '.join([f"{col} = {val}" for col, val in zip(columns, row_values)])}
             WHERE {
                 ' AND '.join([
                     f"{col} = {val}"
-                    for col, val in zip(condition_cols, condition)
+                    for col, val in zip(condition_cols, row_conditions)
                 ])
-            }"""
+            }
+            """
