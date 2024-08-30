@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any, Generator, Optional
 from os.path import abspath
 import logging, duckdb
 
@@ -28,8 +28,8 @@ class DataStore:
     def get_reviews(
             self,
             top: int,
-            score_rating: tuple[float, float],
-            query_embedding: list[float] | None,
+            rating_range: tuple[float, float],
+            query_embedding: Optional[list[float]],
             rating_boost: bool
     ) -> list[tuple[str, str, float]]:
         query = "SELECT title, content,"
@@ -48,7 +48,8 @@ class DataStore:
         query += f"""
         AS score
         FROM {DataStore.REVIEW_TAB}
-        WHERE rating BETWEEN {score_rating[0]} AND {score_rating[1]}
+        WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
+        {"AND embedded" if query_embedding else ""}
         ORDER BY score DESC, rating DESC
         LIMIT {top}
         """
@@ -57,6 +58,18 @@ class DataStore:
             result = conn.sql(query).fetchall()
 
         return result
+
+    def get_podcasts(
+            self,
+            top: int,
+            score_rating: tuple[float, float],
+            title: Optional[str],
+            author: Optional[str],
+            category_embeddings: Optional[list[float]],
+            review_embeddings: Optional[list[float]],
+            desc_embeddings: Optional[list[float]],
+            rating_boost: bool
+    ): return []
 
     def _init_db(self) -> None:
         with self._conn() as conn:
@@ -82,7 +95,8 @@ class DataStore:
     def _embed_categories(self, conn: duckdb.DuckDBPyConnection) -> None:
         query = f"""
         SELECT DISTINCT category
-        FROM {DataStore.CATEGORY_TAB}"""
+        FROM {DataStore.CATEGORY_TAB}
+        WHERE category IS NOT NULL"""
 
         categories: list[str] = [
             result[0]
@@ -124,6 +138,7 @@ class DataStore:
         reviews: list[tuple[str, str, str]] = conn.sql(f"""
         SELECT rev_id, title, content
         FROM {DataStore.REVIEW_TAB}
+        WHERE title IS NOT NULL OR content IS NOT NULL
         """).fetchall()
 
         review_embeddings = self.embedder.embed_reviews(reviews)
@@ -134,15 +149,19 @@ class DataStore:
 
         DataStore._with_transaction(conn, [
             f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN vec FLOAT[{dim}]"
+            f"""ALTER TABLE {DataStore.REVIEW_TAB}
+            ADD COLUMN vec FLOAT[{dim}]
+            DEFAULT [0 for x in range({dim})]::FLOAT[{dim}]""",
+            f"""ALTER TABLE {DataStore.REVIEW_TAB}
+            ADD COLUMN embedded BOOLEAN DEFAULT false"""
         ])
 
         DataStore._logger.info('Ingesting reviews embeddings...')
         ids = [(idx,) for idx, _, _ in reviews]
         for update in DataStore._generate_updates(
                 DataStore.REVIEW_TAB,
-                'vec',
-                review_embeddings,
+                ('vec', 'embedded'),
+                [(embed, 'true') for embed in review_embeddings],
                 ('rev_id',),
                 ids
         ): conn.execute(update)
@@ -191,8 +210,12 @@ class DataStore:
             CREATE TABLE {DataStore.PODCAST_EMBEDS}(
                 title VARCHAR,
                 author VARCHAR,
-                vec_desc FLOAT[{desc_dim}],
+                vec_desc FLOAT[{desc_dim}]
+                DEFAULT [0 for x in range({desc_dim})]::FLOAT[{desc_dim}],
+                desc_embedded BOOLEAN DEFAULT false,
                 vec_rev FLOAT[{rev_dim}]
+                DEFAULT [0 for x in range({rev_dim})]::FLOAT[{rev_dim}],
+                rev_embedded BOOLEAN DEFAULT false
             )""",
             f"""
             INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author)
@@ -202,29 +225,34 @@ class DataStore:
             GROUP BY title, author"""
         ])
 
-        title_author_couples = [
+        title_author_desc_couples = [
             (
                 f"""'{title.replace("'", "''")}'""",
                 f"""'{author.replace("'", "''")}'""")
             for title, author, _ in desc_rows
         ]
-
         DataStore._logger.info('Ingesting podcasts description embeddings...')
         for update in DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
-                'vec_desc',
-                desc_embeds,
+                ('vec_desc', 'desc_embedded'),
+                [(embed, 'true') for embed in desc_embeds],
                 ('title', 'author'),
-                title_author_couples
+                title_author_desc_couples
         ): conn.execute(update)
 
+        title_author_rev_couples = [
+            (
+                f"""'{title.replace("'", "''")}'""",
+                f"""'{author.replace("'", "''")}'""")
+            for title, author, _ in review_rows
+        ]
         DataStore._logger.info('Ingesting podcasts review embeddings...')
         for update in DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
-                'vec_rev',
-                rev_embeds,
+                ('vec_rev', 'rev_embedded'),
+                [(embed, 'true') for embed in rev_embeds],
                 ('title', 'author'),
-                title_author_couples
+                title_author_rev_couples
         ): conn.execute(update)
 
         DataStore._logger.info('Indexing podcasts vector space...')
@@ -383,13 +411,15 @@ class DataStore:
     @staticmethod
     def _generate_updates(
             table: str,
-            column: str,
-            values: list[Any],
+            column: tuple[str, ...],
+            values: list[tuple[Any, ...]],
             condition_cols: tuple[str, ...],
             condition_values: list[tuple[Any, ...]]
     ):
         for condition, value in zip(condition_values, values):
-            yield f"""UPDATE {table} SET {column} = {value}
+            yield f"""UPDATE {table} SET
+            {', '.join([f"{col} = {val}" for col, val in values])}
+            {column} = {value}
             WHERE {
                 ' AND '.join([
                     f"{col} = {val}"
