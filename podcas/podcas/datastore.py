@@ -210,6 +210,7 @@ class DataStore:
             CREATE TABLE {DataStore.PODCAST_EMBEDS}(
                 title VARCHAR,
                 author VARCHAR,
+                rating DOUBLE DEFAULT 0,
                 vec_desc FLOAT[{desc_dim}]
                 DEFAULT [0 for x in range({desc_dim})]::FLOAT[{desc_dim}],
                 desc_embedded BOOLEAN DEFAULT false,
@@ -218,8 +219,10 @@ class DataStore:
                 rev_embedded BOOLEAN DEFAULT false
             )""",
             f"""
-            INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author)
-            SELECT title, author
+            INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author, rating)
+            SELECT title, author, COALESCE(
+                SUM(average_rating * ratings_count_value)
+                / (NULLIF(SUM(ratings_count_value), 0), 0)
             FROM {DataStore.PODCAST_TAB}
             WHERE title IS NOT NULL OR author IS NOT NULL
             GROUP BY title, author"""
@@ -365,9 +368,27 @@ class DataStore:
     def _prep_podcasts(conn: duckdb.DuckDBPyConnection) -> None:
         DataStore._with_transaction(conn, [
             f"""
+            ALTER TABLE {DataStore.PODCAST_TAB}
+            ADD COLUMN ratings_count_value DOUBLE DEFAULT 0""",
+            f"""
             UPDATE {DataStore.PODCAST_TAB}
             SET title = LOWER(title),
-                author = LOWER(author)
+                author = LOWER(author),
+                ratings_count_value = CASE
+                    WHEN LOWER(SUBSTR(ratings_count,
+                               LENGTH(ratings_count), 1)) = 'k'
+                    THEN CAST(SUBSTR(ratings_count, 1,
+                              LENGTH(ratings_count) - 1) AS DOUBLE) * 1000
+                    WHEN LOWER(SUBSTR(ratings_count,
+                               LENGTH(ratings_count), 1)) = 'm'
+                    THEN CAST(SUBSTR(ratings_count, 1,
+                              LENGTH(ratings_count) - 1) AS DOUBLE) * 1000000
+                    WHEN LOWER(SUBSTR(ratings_count,
+                               LENGTH(ratings_count), 1)) = 'b'
+                    THEN CAST(SUBSTR(ratings_count, 1,
+                              LENGTH(ratings_count) - 1) AS DOUBLE) * 1000000000
+                    ELSE CAST(ratings_count AS DOUBLE)
+                END
             """
         ])
 
