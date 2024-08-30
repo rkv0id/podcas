@@ -16,20 +16,7 @@ class PodcastSearch:
                 cls.__instance = super(PodcastSearch, cls).__new__(cls)
         return cls.__instance
 
-    def __init__(
-            self,
-            path: str, *,
-            category_model: str = 'all-MiniLM-L6-v2',
-            review_model: str = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1'
-    ):
-        self.source = path
-        self.__embedder = Embedder(
-            category_model = category_model,
-            review_model = review_model,
-            podcast_model = podcast_model
-        )
-        self.__db = DataStore(path, self.__embedder)
+    def __init__(self):
         self._top = 3
         self._min = 0
         self._max = 5
@@ -39,6 +26,24 @@ class PodcastSearch:
         self._category_emb: Optional[list[float]] = None
         self._review_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
+
+    def load(self, *, source: str) -> Self:
+        self.source = source
+        self.__db = DataStore(self.source, self.__embedder)
+        return self
+
+    def using(
+            self, *,
+            category_model: str = 'all-MiniLM-L6-v2',
+            review_model: str = 'multi-qa-MiniLM-L6-cos-v1',
+            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1'
+    ):
+        self.__embedder = Embedder(
+            category_model = category_model,
+            review_model = review_model,
+            podcast_model = podcast_model
+        )
+        return self
 
     def top(self, n: int) -> Self:
         self._top = n
@@ -58,16 +63,19 @@ class PodcastSearch:
         return self
 
     def by_category(self, category: str) -> Self:
+        PodcastSearch._logger.info("Embedding query category...")
         embeddings = self.__embedder.cat_embedder.encode(category)
         self._category_emb = embeddings[0].tolist()
         return self
 
     def by_review(self, review: str) -> Self:
+        PodcastSearch._logger.info("Embedding query review...")
         embeddings = self.__embedder.rev_embedder.encode(review)
         self._review_emb = embeddings[0].tolist()
         return self
 
     def by_description(self, query: str) -> Self:
+        PodcastSearch._logger.info("Embedding query description...")
         embeddings = self.__embedder.pod_embedder.encode(query)
         self._desc_emb = embeddings[0].tolist()
         return self
@@ -75,13 +83,14 @@ class PodcastSearch:
     def get(self) -> list[tuple[str, str, float, float]]:
         """
         If different kinds of embeddings are set
-        then the search is associative.
+        then the query search is associative.
         Example:
             [...].by_category("fiction")
                  .by_description("monsters")
         will end up searching podcasts that match category
         "fiction" OR description "monsters"
         """
+        PodcastSearch._logger.info("Executing query...")
         podcasts = self.__db.get_podcasts(
             self._top,
             (self._min, self._max),
