@@ -526,7 +526,7 @@ class DataStore:
             values: list[tuple[Any, ...]],
             condition_cols: tuple[str, ...],
             condition_values: list[tuple[Any, ...]]
-    ):
+    ) -> Generator[str, None, None]:
         for row_conditions, row_values in zip(condition_values, values):
             yield f"""UPDATE {table} SET
             {', '.join([f"{col} = {val}" for col, val in zip(columns, row_values)])}
