@@ -83,7 +83,7 @@ class DataStore:
             if category_embeddings:
                 scores.append(f"""
                     (
-                        1 + array_cosine_similarity(vec,
+                        1 + array_cosine_similarity(vec_cat,
                         {category_embeddings}::FLOAT[{len(category_embeddings)}])
                     ) / 2
                 """)
@@ -91,7 +91,7 @@ class DataStore:
             if review_embeddings:
                 scores.append(f"""
                     (
-                        1 + array_cosine_similarity(vec,
+                        1 + array_cosine_similarity(vec_rev,
                         {review_embeddings}::FLOAT[{len(review_embeddings)}])
                     ) / 2
                 """)
@@ -99,7 +99,7 @@ class DataStore:
             if desc_embeddings:
                 scores.append(f"""
                     (
-                        1 + array_cosine_similarity(vec,
+                        1 + array_cosine_similarity(vec_desc,
                         {desc_embeddings}::FLOAT[{len(desc_embeddings)}])
                     ) / 2
                 """)
@@ -108,10 +108,11 @@ class DataStore:
             if rating_boost: query += f"* rating / {len(scores) * 5.}"
 
         query += f"""
+        AS score
         FROM {DataStore.PODCAST_EMBEDS}
         WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
-        {"AND title LIKE '" + title.replace("'", "''") + "'" if title else ""}
-        {"AND author LIKE '" + author.replace("'", "''") + "'" if author else ""}
+        {"AND title LIKE '%" + title.replace("'", "''") + "%'" if title else ""}
+        {"AND author LIKE '%" + author.replace("'", "''") + "%'" if author else ""}
         {"AND cat_embedded" if category_embeddings else ""}
         {"AND rev_embedded" if review_embeddings else ""}
         {"AND desc_embedded" if desc_embeddings else ""}

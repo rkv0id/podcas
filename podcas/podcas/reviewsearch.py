@@ -2,6 +2,7 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
+from numpy import ndarray
 from podcas.podcastsearch import PodcastSearch
 
 from .datastore import DataStore
@@ -60,7 +61,13 @@ class ReviewSearch:
     def by_query(self, query: str) -> Self:
         PodcastSearch._logger.info("Embedding query...")
         embeddings = self.__embedder.rev_embedder.encode(query)
-        self._query_emb = embeddings[0].tolist()
+
+        if isinstance(embeddings, ndarray):
+            self._query_emb = embeddings.tolist()
+        else:
+            PodcastSearch._logger.error("Failed to embed the query!")
+            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
+
         return self
 
     def boost_by_rank(self, boost: bool = True) -> Self:

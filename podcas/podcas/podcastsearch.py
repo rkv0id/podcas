@@ -2,6 +2,8 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
+from numpy import ndarray
+
 from .datastore import DataStore
 from .embedder import Embedder
 
@@ -70,19 +72,37 @@ class PodcastSearch:
     def by_category(self, category: str) -> Self:
         PodcastSearch._logger.info("Embedding query category...")
         embeddings = self.__embedder.cat_embedder.encode(category)
-        self._category_emb = embeddings[0].tolist()
+
+        if isinstance(embeddings, ndarray):
+            self._category_emb = embeddings.tolist()
+        else:
+            PodcastSearch._logger.error("Failed to embed the category query!")
+            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
+
         return self
 
     def by_review(self, review: str) -> Self:
         PodcastSearch._logger.info("Embedding query review...")
         embeddings = self.__embedder.rev_embedder.encode(review)
-        self._review_emb = embeddings[0].tolist()
+
+        if isinstance(embeddings, ndarray):
+            self._review_emb = embeddings.tolist()
+        else:
+            PodcastSearch._logger.error("Failed to embed the review query!")
+            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
+
         return self
 
     def by_description(self, query: str) -> Self:
         PodcastSearch._logger.info("Embedding query description...")
         embeddings = self.__embedder.pod_embedder.encode(query)
-        self._desc_emb = embeddings[0].tolist()
+
+        if isinstance(embeddings, ndarray):
+            self._desc_emb = embeddings.tolist()
+        else:
+            PodcastSearch._logger.error("Failed to embed the description query!")
+            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
+
         return self
 
     def get(self) -> list[tuple[str, str, float, float]]:
