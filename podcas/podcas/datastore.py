@@ -114,7 +114,7 @@ class DataStore:
             title_search_str = "'%" + title_search_str.replace("'", "''") + "%'"
 
         if author:
-            author_search_str = '%'.join(author) if fuzzy_title else author
+            author_search_str = '%'.join(author) if fuzzy_author else author
             author_search_str = "'%" + author_search_str.replace("'", "''") + "%'"
 
         query += f"""
