@@ -62,11 +62,11 @@ class PodcastSearch:
         return self
 
     def by_title(self, title: str) -> Self:
-        self.title = title
+        self._title = title
         return self
 
     def by_author(self, author: str) -> Self:
-        self.author = author
+        self._author = author
         return self
 
     def by_category(self, category: str) -> Self:

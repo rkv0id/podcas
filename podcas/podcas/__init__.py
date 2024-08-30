@@ -3,8 +3,12 @@ import duckdb
 duckdb.install_extension("vss")
 
 # testing start
-default_embedder = 'multi-qa-MiniLM-L6-cos-v1'
 from .podcastsearch import PodcastSearch
+from .reviewsearch import ReviewSearch
+
+__all__ = ['PodcastSearch', 'ReviewSearch']
+
+# default_embedder = 'multi-qa-MiniLM-L6-cos-v1'
 # print(
 #     PodcastSearch()
 #         .load(source="../data/mid.db")

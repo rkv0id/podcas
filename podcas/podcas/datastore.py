@@ -111,12 +111,14 @@ class DataStore:
         AS score
         FROM {DataStore.PODCAST_EMBEDS}
         WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
-        {"AND title LIKE '%" + title.replace("'", "''") + "%'" if title else ""}
-        {"AND author LIKE '%" + author.replace("'", "''") + "%'" if author else ""}
+        {"AND title ILIKE '%" + '%'.join(title).replace("'", "''") + "%'" if title else ""}
+        {"AND author ILIKE '%" + '%'.join(author).replace("'", "''") + "%'" if author else ""}
         {"AND cat_embedded" if category_embeddings else ""}
         {"AND rev_embedded" if review_embeddings else ""}
         {"AND desc_embedded" if desc_embeddings else ""}
         ORDER BY score DESC, rating DESC
+        {", levenshtein(title, '" + title.replace("'", "''") + "') ASC" if title else ""}
+        {", levenshtein(author, '" + author.replace("'", "''") + "') ASC" if author else ""}
         LIMIT {top}
         """
 
