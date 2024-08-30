@@ -1,6 +1,6 @@
 from threading import Lock
 from logging import getLogger
-from typing import Self
+from typing import Optional, Self
 
 from .datastore import DataStore
 from .embedder import Embedder
@@ -21,7 +21,7 @@ class ReviewSearch:
             path: str, *,
             category_model: str = 'all-MiniLM-L6-v2',
             review_model: str = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1',
+            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1'
     ):
         self.source = path
         self.__embedder = Embedder(
@@ -34,7 +34,7 @@ class ReviewSearch:
         self._min = 0
         self._max = 5
         self._rating_boosted = False
-        self._query_emb: list[float] | None = None
+        self._query_emb: Optional[list[float]] = None
 
     def top(self, n: int) -> Self:
         self._top = n
