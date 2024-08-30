@@ -73,6 +73,15 @@ class PodcastSearch:
         return self
 
     def get(self) -> list[tuple[str, str, float, float]]:
+        """
+        If different kinds of embeddings are set
+        then the search is associative.
+        Example:
+            [...].by_category("fiction")
+                 .by_description("monsters")
+        will end up searching podcasts that match category
+        "fiction" OR description "monsters"
+        """
         podcasts = self.__db.get_podcasts(
             self._top,
             (self._min, self._max),

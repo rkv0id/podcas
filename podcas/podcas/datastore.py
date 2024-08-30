@@ -72,9 +72,49 @@ class DataStore:
     ) -> list[tuple[str, str, float, float]]:
         query = "SELECT title, author, rating,"
 
+        if not (
+                category_embeddings
+                or review_embeddings
+                or desc_embeddings
+        ): query += ' 1'
+        else:
+            scores = []
+
+            if category_embeddings:
+                scores.append(f"""
+                    (
+                        1 + array_cosine_similarity(vec,
+                        {category_embeddings}::FLOAT[{len(category_embeddings)}])
+                    ) / 2
+                """)
+
+            if review_embeddings:
+                scores.append(f"""
+                    (
+                        1 + array_cosine_similarity(vec,
+                        {review_embeddings}::FLOAT[{len(review_embeddings)}])
+                    ) / 2
+                """)
+
+            if desc_embeddings:
+                scores.append(f"""
+                    (
+                        1 + array_cosine_similarity(vec,
+                        {desc_embeddings}::FLOAT[{len(desc_embeddings)}])
+                    ) / 2
+                """)
+
+            query += ' + '.join(scores)
+            if rating_boost: query += f"* rating / {len(scores) * 5.}"
+
         query += f"""
         FROM {DataStore.PODCAST_EMBEDS}
         WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
+        {"AND title LIKE '" + title.replace("'", "''") + "'" if title else ""}
+        {"AND author LIKE '" + author.replace("'", "''") + "'" if author else ""}
+        {"AND cat_embedded" if category_embeddings else ""}
+        {"AND rev_embedded" if review_embeddings else ""}
+        {"AND desc_embedded" if desc_embeddings else ""}
         ORDER BY score DESC, rating DESC
         LIMIT {top}
         """
