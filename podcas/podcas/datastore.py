@@ -64,7 +64,9 @@ class DataStore:
             top: int,
             rating_range: tuple[float, float],
             title: Optional[str],
+            fuzzy_title: bool,
             author: Optional[str],
+            fuzzy_author: bool,
             category_embeddings: Optional[list[float]],
             review_embeddings: Optional[list[float]],
             desc_embeddings: Optional[list[float]],
@@ -107,12 +109,20 @@ class DataStore:
             query += ' + '.join(scores)
             if rating_boost: query += f"* rating / {len(scores) * 5.}"
 
+        if title:
+            title_search_str = '%'.join(title) if fuzzy_title else title
+            title_search_str = "'%" + title_search_str.replace("'", "''") + "%'"
+
+        if author:
+            author_search_str = '%'.join(author) if fuzzy_title else author
+            author_search_str = "'%" + author_search_str.replace("'", "''") + "%'"
+
         query += f"""
         AS score
         FROM {DataStore.PODCAST_EMBEDS}
         WHERE rating BETWEEN {rating_range[0]} AND {rating_range[1]}
-        {"AND title ILIKE '%" + '%'.join(title).replace("'", "''") + "%'" if title else ""}
-        {"AND author ILIKE '%" + '%'.join(author).replace("'", "''") + "%'" if author else ""}
+        {"AND title ILIKE " + title_search_str if title else ""}
+        {"AND author ILIKE " + author_search_str if author else ""}
         {"AND cat_embedded" if category_embeddings else ""}
         {"AND rev_embedded" if review_embeddings else ""}
         {"AND desc_embedded" if desc_embeddings else ""}

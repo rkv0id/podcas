@@ -25,6 +25,8 @@ class PodcastSearch:
         self._rating_boosted = False
         self._title: Optional[str] = None
         self._author: Optional[str] = None
+        self._fuzzy_title: bool = False
+        self._fuzzy_author: bool = False
         self._category_emb: Optional[list[float]] = None
         self._review_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
@@ -61,12 +63,14 @@ class PodcastSearch:
         self._max = max
         return self
 
-    def by_title(self, title: str) -> Self:
+    def by_title(self, title: str, *, fuzzy: bool = False) -> Self:
         self._title = title
+        self._fuzzy_title = fuzzy
         return self
 
-    def by_author(self, author: str) -> Self:
+    def by_author(self, author: str, *, fuzzy: bool = False) -> Self:
         self._author = author
+        self._fuzzy_author = fuzzy
         return self
 
     def by_category(self, category: str) -> Self:
@@ -120,7 +124,9 @@ class PodcastSearch:
             self._top,
             (self._min, self._max),
             self._title,
+            self._fuzzy_title,
             self._author,
+            self._fuzzy_author,
             self._category_emb,
             self._review_emb,
             self._desc_emb,
