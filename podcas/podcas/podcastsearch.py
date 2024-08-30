@@ -26,6 +26,11 @@ class PodcastSearch:
         self._category_emb: Optional[list[float]] = None
         self._review_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
+        self.__embedder = Embedder(
+            category_model = 'all-MiniLM-L6-v2',
+            review_model = 'multi-qa-MiniLM-L6-cos-v1',
+            podcast_model = 'multi-qa-MiniLM-L6-cos-v1'
+        )
 
     def load(self, *, source: str) -> Self:
         self.source = source
