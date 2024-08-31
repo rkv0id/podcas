@@ -1,3 +1,6 @@
+from logging import getLogger
+logger = getLogger(__name__)
+
 # Install vector similarity search extension
 import duckdb
 duckdb.install_extension("vss")
@@ -7,6 +10,19 @@ from .podcastsearch import PodcastSearch
 from .reviewsearch import ReviewSearch
 
 __all__ = ['PodcastSearch', 'ReviewSearch']
+
+from torch import device, cuda
+from torch.backends import mps
+
+if cuda.is_available():
+    lib_device = device("cuda")
+    logger.info("Using NVIDIA GPU [CUDA]")
+elif mps.is_available():
+    lib_device = device("mps")
+    logger.info("Using Apple M/x GPU [MPS]")
+else:
+    lib_device = device("cpu")
+    logger.info("Using CPU")
 
 # default_embedder = 'multi-qa-MiniLM-L6-cos-v1'
 # print(
