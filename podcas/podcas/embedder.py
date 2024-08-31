@@ -97,7 +97,7 @@ class Embedder:
     ) -> tuple[list[list[float]], list[list[float]], list[list[float]]]:
         agg_descriptions = [
             '\n'.join([
-                f"EP: {description}"
+                f"EPISODE: {description}"
                 for description in descs
             ])
             for descs in descriptions
@@ -105,7 +105,7 @@ class Embedder:
 
         agg_reviews = [
             '\n'.join([
-                f"REV/ TITLE:{title} - CONTENT:{content}"
+                f"REVIEW: TITLE:{title} - CONTENT:{content}"
                 for title, content in review_pairs
             ])
             for review_pairs in reviews
