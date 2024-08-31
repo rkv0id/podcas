@@ -114,7 +114,11 @@ class DataStore:
                 """)
 
             query += ' + '.join(scores)
-            if rating_boost: query += f"* rating / {len(scores) * 5.}"
+            if rating_boost:
+                query += f"""
+                * (CASE WHEN rating = 0 THEN 2.5 ELSE rating END)
+                / {len(scores) * 5.}
+                """
 
         if title:
             title_search_str = '%'.join(title) if fuzzy_title else title
