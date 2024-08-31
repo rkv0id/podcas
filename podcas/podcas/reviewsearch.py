@@ -2,13 +2,12 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from numpy import ndarray
-from podcas.podcastsearch import PodcastSearch
-
 from .datastore import DataStore
 from .embedder import Embedder
 
+
 class ReviewSearch:
+    DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
     __instance = None
     __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
@@ -26,9 +25,9 @@ class ReviewSearch:
         self._rating_boosted = False
         self._query_emb: Optional[list[float]] = None
         self.__embedder = Embedder(
-            category_model = 'all-MiniLM-L6-v2',
-            review_model = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model = 'multi-qa-MiniLM-L6-cos-v1'
+            category_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL,
+            review_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL,
+            podcast_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL
         )
 
     def load(self, *, source: str) -> Self:
@@ -38,9 +37,9 @@ class ReviewSearch:
 
     def using(
             self, *,
-            category_model: str = 'all-MiniLM-L6-v2',
-            review_model: str = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1'
+            category_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
+            review_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
+            podcast_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking'
     ):
         self.__embedder = Embedder(
             category_model = category_model,
@@ -53,21 +52,24 @@ class ReviewSearch:
         self._top = n
         return self
 
+    def rating_boosted(self, boost: bool = True) -> Self:
+        self._rating_boosted = boost
+        return self
+
     def by_rating(self, min: float, max: float = 5.) -> Self:
         self._min = min
         self._max = max
         return self
 
     def by_query(self, query: str) -> Self:
-        PodcastSearch._logger.info("Embedding query...")
-        embeddings = self.__embedder.rev_embedder.encode(query)
+        ReviewSearch._logger.info("Embedding query...")
+        embeddings = Embedder.embed_text(
+            [query],
+            self.__embedder.rev_tokenizer,
+            self.__embedder.rev_model
+        )
 
-        if isinstance(embeddings, ndarray):
-            self._query_emb = embeddings.tolist()
-        else:
-            PodcastSearch._logger.error("Failed to embed the query!")
-            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
-
+        self._query_emb = embeddings[0].tolist()
         return self
 
     def boost_by_rank(self, boost: bool = True) -> Self:
@@ -75,7 +77,7 @@ class ReviewSearch:
         return self
 
     def get(self) -> list[tuple[str, str, float, float]]:
-        PodcastSearch._logger.info("Executing query...")
+        ReviewSearch._logger.info("Executing query...")
         reviews = self.__db.get_reviews(
             self._top,
             (self._min, self._max),

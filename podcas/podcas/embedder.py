@@ -1,5 +1,6 @@
 from logging import getLogger
-from sentence_transformers import SentenceTransformer
+from transformers import AutoModel, AutoTokenizer
+import torch
 
 
 class Embedder:
@@ -12,21 +13,57 @@ class Embedder:
             review_model: str,
             podcast_model: str
     ):
-        self.cat_embedder = SentenceTransformer(category_model)
-        self.rev_embedder = SentenceTransformer(review_model)
-        self.pod_embedder = SentenceTransformer(podcast_model)
+        self.cat_tokenizer = AutoTokenizer.from_pretrained(category_model)
+        self.cat_model = AutoModel.from_pretrained(category_model)
+
+        self.rev_tokenizer = AutoTokenizer.from_pretrained(review_model)
+        self.rev_model = AutoModel.from_pretrained(review_model)
+
+        self.pod_tokenizer = AutoTokenizer.from_pretrained(podcast_model)
+        self.pod_model = AutoModel.from_pretrained(podcast_model)
+
         self.model_names = {
             'category': category_model,
             'review': review_model,
             'podcast': podcast_model
         }
 
+    @staticmethod
+    def embed_text(texts: list[str], tokenizer, model) -> torch.Tensor:
+        Embedder._logger.info("_tokenizing input...")
+        encoded_input = tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            return_tensors="pt",
+            max_length=64
+        )
+
+        Embedder._logger.info("_embedding tokenized input...")
+        with torch.no_grad(): model_output = model(**encoded_input)
+
+        token_embeddings = model_output[0]
+        attention_mask = encoded_input['attention_mask']
+        input_mask_expanded = (
+            attention_mask
+                .unsqueeze(-1)
+                .expand(token_embeddings.size())
+                .float()
+        )
+
+        embeddings = (
+            torch.sum(token_embeddings * input_mask_expanded, 1)
+            / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        )
+
+        return embeddings
+
     def embed_categories(self, categories: list[str]) -> dict[str, list[float]]:
         Embedder._logger.info("Embedding categories...")
-        embeddings = self.cat_embedder.encode(
+        embeddings = Embedder.embed_text(
             categories,
-            show_progress_bar=True,
-            batch_size=128
+            self.cat_tokenizer,
+            self.cat_model
         )
 
         return {
@@ -44,10 +81,10 @@ class Embedder:
         ]
 
         Embedder._logger.info("Embedding reviews...")
-        embeddings = self.rev_embedder.encode(
+        embeddings = Embedder.embed_text(
             aggregated,
-            show_progress_bar = True,
-            batch_size=32
+            self.rev_tokenizer,
+            self.rev_model
         )
 
         return [vec.tolist() for vec in embeddings]
@@ -68,7 +105,7 @@ class Embedder:
 
         agg_reviews = [
             '\n'.join([
-                f"REV: title:{title} - content:{content}"
+                f"REV/ TITLE:{title} - CONTENT:{content}"
                 for title, content in review_pairs
             ])
             for review_pairs in reviews
@@ -80,24 +117,24 @@ class Embedder:
         ]
 
         Embedder._logger.info("Embedding podcasts descriptions...")
-        desc_embeds = self.pod_embedder.encode(
+        desc_embeds = Embedder.embed_text(
             agg_descriptions,
-            show_progress_bar=True,
-            batch_size=32
+            self.pod_tokenizer,
+            self.pod_model
         ) if len(agg_descriptions) > 0 else []
 
         Embedder._logger.info("Embedding podcasts reviews...")
-        rev_embeds = self.rev_embedder.encode(
+        rev_embeds = Embedder.embed_text(
             agg_reviews,
-            show_progress_bar=True,
-            batch_size=32
+            self.rev_tokenizer,
+            self.rev_model
         ) if len(agg_reviews) > 0 else []
 
         Embedder._logger.info("Embedding podcasts categories...")
-        cat_embeds = self.cat_embedder.encode(
+        cat_embeds = Embedder.embed_text(
             agg_categories,
-            show_progress_bar=True,
-            batch_size=128
+            self.cat_tokenizer,
+            self.cat_model
         ) if len(agg_categories) > 0 else []
 
         return (

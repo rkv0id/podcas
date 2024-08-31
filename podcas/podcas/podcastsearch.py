@@ -2,12 +2,12 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from numpy import ndarray
-
 from .datastore import DataStore
 from .embedder import Embedder
 
+
 class PodcastSearch:
+    DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
     __instance = None
     __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
@@ -31,9 +31,9 @@ class PodcastSearch:
         self._review_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
         self.__embedder = Embedder(
-            category_model = 'all-MiniLM-L6-v2',
-            review_model = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model = 'multi-qa-MiniLM-L6-cos-v1'
+            category_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL,
+            review_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL,
+            podcast_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL
         )
 
     def load(self, *, source: str) -> Self:
@@ -43,9 +43,9 @@ class PodcastSearch:
 
     def using(
             self, *,
-            category_model: str = 'all-MiniLM-L6-v2',
-            review_model: str = 'multi-qa-MiniLM-L6-cos-v1',
-            podcast_model: str = 'multi-qa-MiniLM-L6-cos-v1'
+            category_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
+            review_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
+            podcast_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking'
     ):
         self.__embedder = Embedder(
             category_model = category_model,
@@ -56,6 +56,10 @@ class PodcastSearch:
 
     def top(self, n: int) -> Self:
         self._top = n
+        return self
+
+    def rating_boosted(self, boost: bool = True) -> Self:
+        self._rating_boosted = boost
         return self
 
     def by_rating(self, min: float, max: float = 5.) -> Self:
@@ -75,38 +79,35 @@ class PodcastSearch:
 
     def by_category(self, category: str) -> Self:
         PodcastSearch._logger.info("Embedding query category...")
-        embeddings = self.__embedder.cat_embedder.encode(category)
+        embeddings = Embedder.embed_text(
+            [category],
+            self.__embedder.cat_tokenizer,
+            self.__embedder.cat_model
+        )
 
-        if isinstance(embeddings, ndarray):
-            self._category_emb = embeddings.tolist()
-        else:
-            PodcastSearch._logger.error("Failed to embed the category query!")
-            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
-
+        self._category_emb = embeddings[0].tolist()
         return self
 
     def by_review(self, review: str) -> Self:
         PodcastSearch._logger.info("Embedding query review...")
-        embeddings = self.__embedder.rev_embedder.encode(review)
+        embeddings = Embedder.embed_text(
+            [review],
+            self.__embedder.rev_tokenizer,
+            self.__embedder.rev_model
+        )
 
-        if isinstance(embeddings, ndarray):
-            self._review_emb = embeddings.tolist()
-        else:
-            PodcastSearch._logger.error("Failed to embed the review query!")
-            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
-
+        self._review_emb = embeddings[0].tolist()
         return self
 
     def by_description(self, query: str) -> Self:
         PodcastSearch._logger.info("Embedding query description...")
-        embeddings = self.__embedder.pod_embedder.encode(query)
+        embeddings = Embedder.embed_text(
+            [query],
+            self.__embedder.pod_tokenizer,
+            self.__embedder.pod_model
+        )
 
-        if isinstance(embeddings, ndarray):
-            self._desc_emb = embeddings.tolist()
-        else:
-            PodcastSearch._logger.error("Failed to embed the description query!")
-            PodcastSearch._logger.error(f"Expected <numpy.ndarray>-typed embeddings but got {type(embeddings)}.")
-
+        self._desc_emb = embeddings[0].tolist()
         return self
 
     def get(self) -> list[tuple[str, str, float, float]]:

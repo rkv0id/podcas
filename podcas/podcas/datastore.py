@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
 from os.path import abspath
+from tqdm import tqdm
 import logging, duckdb
 
 from .embedder import Embedder
@@ -55,7 +56,13 @@ class DataStore:
         """
 
         with self._conn() as conn:
-            result = conn.sql(query).fetchall()
+            try: result = conn.sql(query).fetchall()
+            except duckdb.ProgrammingError as error:
+                DataStore._logger.error(
+                    f"Input-caused error while getting reviews: {error}",
+                    exc_info=True
+                )
+                result = []
 
         return result
 
@@ -133,7 +140,13 @@ class DataStore:
         """
 
         with self._conn() as conn:
-            result = conn.sql(query).fetchall()
+            try: result = conn.sql(query).fetchall()
+            except duckdb.ProgrammingError as error:
+                DataStore._logger.error(
+                    f"Input-caused error while getting podcasts: {error}",
+                    exc_info=True
+                )
+                result = []
 
         return result
 
@@ -224,12 +237,16 @@ class DataStore:
 
         DataStore._logger.info('Ingesting reviews embeddings...')
         ids = [(idx,) for idx, _, _ in reviews]
-        for update in DataStore._generate_updates(
+        for update in tqdm(
+            DataStore._generate_updates(
                 DataStore.REVIEW_TAB,
                 ('vec', 'embedded'),
                 [(embed, 'true') for embed in review_embeddings],
                 ('rev_id',),
                 ids
+            ),
+            total=len(ids),
+            desc="Ingesting reviews embeddings"
         ): conn.execute(update)
 
         DataStore._logger.info('Indexing reviews vector space...')
@@ -315,13 +332,16 @@ class DataStore:
                 f"""'{author.replace("'", "''")}'""")
             for title, author, _ in desc_rows
         ]
-        DataStore._logger.info('Ingesting podcasts description embeddings...')
-        for update in DataStore._generate_updates(
+        for update in tqdm(
+            DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
                 ('vec_desc', 'desc_embedded'),
                 [(embed, 'true') for embed in desc_embeds],
                 ('title', 'author'),
                 title_author_desc_couples
+            ),
+            total=len(title_author_desc_couples),
+            desc = "Ingesting podcasts description embeddings"
         ): conn.execute(update)
 
         title_author_rev_couples = [
@@ -330,13 +350,16 @@ class DataStore:
                 f"""'{author.replace("'", "''")}'""")
             for title, author, _ in review_rows
         ]
-        DataStore._logger.info('Ingesting podcasts review embeddings...')
-        for update in DataStore._generate_updates(
+        for update in tqdm(
+            DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
                 ('vec_rev', 'rev_embedded'),
                 [(embed, 'true') for embed in rev_embeds],
                 ('title', 'author'),
                 title_author_rev_couples
+            ),
+            total = len(title_author_rev_couples),
+            desc = "Ingesting podcasts review embeddings"
         ): conn.execute(update)
 
         title_author_cat_couples = [
@@ -345,13 +368,16 @@ class DataStore:
                 f"""'{author.replace("'", "''")}'""")
             for title, author, _ in category_rows
         ]
-        DataStore._logger.info('Ingesting podcasts category embeddings...')
-        for update in DataStore._generate_updates(
+        for update in tqdm(
+            DataStore._generate_updates(
                 DataStore.PODCAST_EMBEDS,
                 ('vec_cat', 'cat_embedded'),
                 [(embed, 'true') for embed in cat_embeds],
                 ('title', 'author'),
                 title_author_cat_couples
+            ),
+            total = len(title_author_cat_couples),
+            desc = "Ingesting podcasts category embeddings"
         ): conn.execute(update)
 
         DataStore._logger.info('Indexing podcasts vector space...')

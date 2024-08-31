@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11.9"
 duckdb = "^1.0.0"
-sentence-transformers = "^3.0.1"
+torch = "^2.4.0"
 transformers = "^4.44.2"
 
 
