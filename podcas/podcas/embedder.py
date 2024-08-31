@@ -6,6 +6,15 @@ import torch
 class Embedder:
     DEFAULT_VEC_SIZE = 128
     _logger = getLogger(f"{__name__}.{__qualname__}")
+    _device = torch.device("cpu")
+
+    if torch.cuda.is_available():
+        _device = torch.device("cuda")
+        _logger.info("Using NVIDIA GPU [CUDA]")
+    elif torch.backends.mps.is_available():
+        _device = torch.device("mps")
+        _logger.info("Using Apple M/x GPU [MPS]")
+    else: _logger.info("Using CPU")
 
     def __init__(
             self,
@@ -14,13 +23,13 @@ class Embedder:
             podcast_model: str
     ):
         self.cat_tokenizer = AutoTokenizer.from_pretrained(category_model)
-        self.cat_model = AutoModel.from_pretrained(category_model)
+        self.cat_model = AutoModel.from_pretrained(category_model).to(Embedder._device)
 
         self.rev_tokenizer = AutoTokenizer.from_pretrained(review_model)
-        self.rev_model = AutoModel.from_pretrained(review_model)
+        self.rev_model = AutoModel.from_pretrained(review_model).to(Embedder._device)
 
         self.pod_tokenizer = AutoTokenizer.from_pretrained(podcast_model)
-        self.pod_model = AutoModel.from_pretrained(podcast_model)
+        self.pod_model = AutoModel.from_pretrained(podcast_model).to(Embedder._device)
 
         self.model_names = {
             'category': category_model,
@@ -37,7 +46,7 @@ class Embedder:
             truncation=True,
             return_tensors="pt",
             max_length=64
-        )
+        ).to(Embedder._device)
 
         Embedder._logger.info("_embedding tokenized input...")
         with torch.no_grad(): model_output = model(**encoded_input)
@@ -56,7 +65,7 @@ class Embedder:
             / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
         )
 
-        return embeddings
+        return embeddings.cpu()
 
     def embed_categories(self, categories: list[str]) -> dict[str, list[float]]:
         Embedder._logger.info("Embedding categories...")
