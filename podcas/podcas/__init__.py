@@ -5,12 +5,6 @@ logger = getLogger(__name__)
 import duckdb
 duckdb.install_extension("vss")
 
-# testing start
-from .podcastsearch import PodcastSearch
-from .reviewsearch import ReviewSearch
-
-__all__ = ['PodcastSearch', 'ReviewSearch']
-
 from torch import device, cuda
 from torch.backends import mps
 
@@ -24,16 +18,26 @@ else:
     lib_device = device("cpu")
     logger.info("Using CPU")
 
-# default_embedder = 'multi-qa-MiniLM-L6-cos-v1'
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
+DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual"
+DEFAULT_SUMMARIZE_MODEL = "facebook/bart-large-cnn"
+
+from .search import PodcastSearch, ReviewSearch
+__all__ = ['PodcastSearch', 'ReviewSearch']
+
+
+# EXAMPLE USAGE
+# default_model = 'multi-qa-MiniLM-L6-cos-v1'
 # print(
 #     PodcastSearch()
 #         .load(source="../data/mid.db")
 #         .using(
-#             category_model = default_embedder,
-#             podcast_model = default_embedder,
-#             review_model = default_embedder)
+#             category_model = default_model,
+#             podcast_model = default_model,
+#             review_model = default_model,
+#             sentiment_model = default_model)
 #         .top(4)
 #         .by_rating(3, max=4)
-#         .by_description('tales of the free cities')
+#         .by_category('fiction')
 #         .get()
 # )

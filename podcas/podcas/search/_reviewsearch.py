@@ -2,12 +2,16 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from .datastore import DataStore
-from .embedder import Embedder
+from podcas.data import DataStore
+from podcas.ml import Embedder, Mooder, Summarizer
+from podcas import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_SENTIMENT_MODEL,
+    DEFAULT_SUMMARIZE_MODEL
+)
 
 
 class ReviewSearch:
-    DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
     __instance = None
     __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
@@ -23,28 +27,43 @@ class ReviewSearch:
         self._min = 0
         self._max = 5
         self._rating_boosted = False
+        self._sentiment: Optional[str] = None
         self._query_emb: Optional[list[float]] = None
+        self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
         self.__embedder = Embedder(
-            category_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL,
-            review_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL,
-            podcast_model = ReviewSearch.DEFAULT_EMBEDDING_MODEL
+            category_model = DEFAULT_EMBEDDING_MODEL,
+            review_model = DEFAULT_EMBEDDING_MODEL,
+            podcast_model = DEFAULT_EMBEDDING_MODEL,
+            summarizer = self.__summarizer
+        )
+        self.__mooder = Mooder(
+            model = DEFAULT_SENTIMENT_MODEL,
+            summarizer = self.__summarizer
         )
 
     def load(self, *, source: str) -> Self:
         self.source = source
-        self.__db = DataStore(self.source, self.__embedder)
+        self.__db = DataStore(self.source, self.__embedder, self.__mooder)
         return self
 
     def using(
             self, *,
-            category_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
-            review_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
-            podcast_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking'
+            category_model: str = DEFAULT_EMBEDDING_MODEL,
+            review_model: str = DEFAULT_EMBEDDING_MODEL,
+            podcast_model: str = DEFAULT_EMBEDDING_MODEL,
+            mooder_model: str = DEFAULT_SENTIMENT_MODEL,
+            summary_model: str = DEFAULT_SUMMARIZE_MODEL
     ):
+        self.__summarizer = Summarizer(summary_model)
         self.__embedder = Embedder(
             category_model = category_model,
             review_model = review_model,
-            podcast_model = podcast_model
+            podcast_model = podcast_model,
+            summarizer = self.__summarizer
+        )
+        self.__mooder = Mooder(
+            model = mooder_model,
+            summarizer = self.__summarizer
         )
         return self
 
@@ -61,9 +80,21 @@ class ReviewSearch:
         self._max = max
         return self
 
+    def positive(self) -> Self:
+        self._sentiment = 'positive'
+        return self
+
+    def negative(self) -> Self:
+        self._sentiment = 'negative'
+        return self
+
+    def neutral(self) -> Self:
+        self._sentiment = 'neutral'
+        return self
+
     def by_query(self, query: str) -> Self:
         ReviewSearch._logger.info("Embedding query...")
-        embeddings = Embedder.embed_text(
+        embeddings = self.__embedder.embed_text(
             [query],
             self.__embedder.rev_tokenizer,
             self.__embedder.rev_model
@@ -72,15 +103,12 @@ class ReviewSearch:
         self._query_emb = embeddings[0].tolist()
         return self
 
-    def boost_by_rank(self, boost: bool = True) -> Self:
-        self._rating_boosted = boost
-        return self
-
     def get(self) -> list[tuple[str, str, float, float]]:
         ReviewSearch._logger.info("Executing query...")
         reviews = self.__db.get_reviews(
             self._top,
             (self._min, self._max),
+            self._sentiment,
             self._query_emb,
             self._rating_boosted
         )
@@ -89,6 +117,7 @@ class ReviewSearch:
         self._min = 0
         self._max = 5
         self._rating_boosted = False
+        self._sentiment = None
         self._query_emb = None
 
         return reviews

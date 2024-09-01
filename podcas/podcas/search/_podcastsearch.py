@@ -2,12 +2,16 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from .datastore import DataStore
-from .embedder import Embedder
+from podcas.data import DataStore
+from podcas.ml import Embedder, Mooder, Summarizer
+from podcas import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_SENTIMENT_MODEL,
+    DEFAULT_SUMMARIZE_MODEL
+)
 
 
 class PodcastSearch:
-    DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
     __instance = None
     __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
@@ -28,29 +32,42 @@ class PodcastSearch:
         self._fuzzy_title: bool = False
         self._fuzzy_author: bool = False
         self._category_emb: Optional[list[float]] = None
-        self._review_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
+        self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
         self.__embedder = Embedder(
-            category_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL,
-            review_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL,
-            podcast_model = PodcastSearch.DEFAULT_EMBEDDING_MODEL
+            category_model = DEFAULT_EMBEDDING_MODEL,
+            review_model = DEFAULT_EMBEDDING_MODEL,
+            podcast_model = DEFAULT_EMBEDDING_MODEL,
+            summarizer = self.__summarizer
+        )
+        self.__mooder = Mooder(
+            model = DEFAULT_SENTIMENT_MODEL,
+            summarizer = self.__summarizer
         )
 
     def load(self, *, source: str) -> Self:
         self.source = source
-        self.__db = DataStore(self.source, self.__embedder)
+        self.__db = DataStore(self.source, self.__embedder, self.__mooder)
         return self
 
     def using(
             self, *,
-            category_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
-            review_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking',
-            podcast_model: str = 'sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking'
+            category_model: str = DEFAULT_EMBEDDING_MODEL,
+            review_model: str = DEFAULT_EMBEDDING_MODEL,
+            podcast_model: str = DEFAULT_EMBEDDING_MODEL,
+            mooder_model: str = DEFAULT_SENTIMENT_MODEL,
+            summary_model: str = DEFAULT_SUMMARIZE_MODEL
     ):
+        self.__summarizer = Summarizer(summary_model)
         self.__embedder = Embedder(
             category_model = category_model,
             review_model = review_model,
-            podcast_model = podcast_model
+            podcast_model = podcast_model,
+            summarizer = self.__summarizer
+        )
+        self.__mooder = Mooder(
+            model = mooder_model,
+            summarizer = self.__summarizer
         )
         return self
 
@@ -78,8 +95,8 @@ class PodcastSearch:
         return self
 
     def by_category(self, category: str) -> Self:
-        PodcastSearch._logger.info("Embedding query category...")
-        embeddings = Embedder.embed_text(
+        PodcastSearch._logger.info("Embedding category query...")
+        embeddings = self.__embedder.embed_text(
             [category],
             self.__embedder.cat_tokenizer,
             self.__embedder.cat_model
@@ -88,20 +105,9 @@ class PodcastSearch:
         self._category_emb = embeddings[0].tolist()
         return self
 
-    def by_review(self, review: str) -> Self:
-        PodcastSearch._logger.info("Embedding query review...")
-        embeddings = Embedder.embed_text(
-            [review],
-            self.__embedder.rev_tokenizer,
-            self.__embedder.rev_model
-        )
-
-        self._review_emb = embeddings[0].tolist()
-        return self
-
     def by_description(self, query: str) -> Self:
-        PodcastSearch._logger.info("Embedding query description...")
-        embeddings = Embedder.embed_text(
+        PodcastSearch._logger.info("Embedding description query...")
+        embeddings = self.__embedder.embed_text(
             [query],
             self.__embedder.pod_tokenizer,
             self.__embedder.pod_model
@@ -129,7 +135,6 @@ class PodcastSearch:
             self._author,
             self._fuzzy_author,
             self._category_emb,
-            self._review_emb,
             self._desc_emb,
             self._rating_boosted
         )
@@ -139,9 +144,10 @@ class PodcastSearch:
         self._max = 5
         self._rating_boosted = False
         self._title = None
+        self._fuzzy_title = False
         self._author = None
+        self._fuzzy_author = False
         self._category_emb = None
-        self._review_emb = None
         self._desc_emb = None
 
         return podcasts
