@@ -176,7 +176,4 @@ class Embedder:
                 ).tolist()
             )
 
-        return (
-            [vec.tolist() for vec in desc_embeddings],
-            [vec.tolist() for vec in cat_embeddings]
-        )
+        return desc_embeddings, cat_embeddings

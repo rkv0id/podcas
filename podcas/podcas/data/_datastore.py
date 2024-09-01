@@ -486,7 +486,7 @@ class DataStore:
         SELECT COUNT(column_name)
         FROM information_schema.columns
         WHERE table_name = '{DataStore.CATEGORY_EMBEDS}'
-        AND column_name IN ('category', 'vec')
+        AND column_name IN ('name', 'vec')
         """
         result, *_ = conn.sql(query).fetchall()
         complete = result[0] == 2
@@ -576,12 +576,12 @@ class DataStore:
     def _prep_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
         dim = self.embedder.rev_model.config.hidden_size
         DataStore._with_transaction(conn, [
-            f"""
-            ALTER TABLE {DataStore.REVIEW_TAB}
-            DROP COLUMN IF EXISTS rev_id""",
-            f"""
-            ALTER TABLE {DataStore.REVIEW_TAB}
-            ADD COLUMN rev_id INTEGER""",
+            f"DROP INDEX IF EXISTS idx_rev",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS embedded",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS sentiment",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS rev_id",
+            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN rev_id INTEGER",
             f"""
             UPDATE {DataStore.REVIEW_TAB}
             SET rev_id = seq.seq_num
@@ -590,14 +590,11 @@ class DataStore:
                 FROM {DataStore.REVIEW_TAB}
             ) AS seq
             WHERE {DataStore.REVIEW_TAB}.rowid = seq.rowid""",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN vec FLOAT[{dim}]
             DEFAULT [0 for x in range({dim})]::FLOAT[{dim}]""",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS embedded",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN embedded BOOLEAN DEFAULT false""",
-            f"""ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS sentiment""",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN sentiment VARCHAR DEFAULT 'neutral'""",
             f"""
@@ -614,6 +611,8 @@ class DataStore:
         rev_dim = self.embedder.rev_model.config.hidden_size
         DataStore._logger.info('Creating episodes vector store...')
         DataStore._with_transaction(conn, [
+            f"DROP INDEX IF EXISTS idx_ep_desc",
+            f"DROP INDEX IF EXISTS idx_ep_rev",
             f"""
             ALTER TABLE {DataStore.PODCAST_TAB}
             DROP COLUMN IF EXISTS ratings_count_value""",
