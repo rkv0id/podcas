@@ -28,8 +28,14 @@ class DataStore:
         self.model_names = {
             **self.embedder.model_names,
             'sentiment': self.mooder.model_name,
-            'sentiment_summary': self.mooder.summarizer.model_name,
-            'embedding_summary': self.embedder.summarizer.model_name
+            'sentiment_summary': (
+                self.mooder.summarizer.model_name
+                if self.mooder.summarizer else ""
+            ),
+            'embedding_summary': (
+                self.embedder.summarizer.model_name
+                if self.embedder.summarizer else ""
+            )
         }
         self._init_db()
 
