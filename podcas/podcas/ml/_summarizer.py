@@ -11,8 +11,8 @@ class Summarizer:
     def __init__(
             self,
             model: str,
-            max_length: int = 512,
-            batch_size: int = 32
+            max_length: int = 64,
+            batch_size: int = 8
     ) -> None:
         self.model_name = model
         self.max_length = max_length
@@ -30,6 +30,7 @@ class Summarizer:
         a longer context than 1.5 times the truncation window
         """
 
+        Summarizer._logger.info("Summarizing input...")
         if (
                 not inputs
                 or not max_tries

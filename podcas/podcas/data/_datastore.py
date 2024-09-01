@@ -253,14 +253,15 @@ class DataStore:
         category_embeddings = self.embedder.embed_categories(categories)
 
         DataStore._logger.info('Ingesting categories embeddings...')
-        conn.executemany(
-            f"""
-            INSERT INTO {DataStore.CATEGORY_EMBEDS} VALUES (?, ?)""",
-            [
-                [category, vector]
-                for category, vector in category_embeddings.items()
-            ]
-        )
+        if categories:
+            conn.executemany(
+                f"""
+                INSERT INTO {DataStore.CATEGORY_EMBEDS} VALUES (?, ?)""",
+                [
+                    [category, vector]
+                    for category, vector in category_embeddings.items()
+                ]
+            )
 
         DataStore._logger.info('Indexing categories vector space...')
         conn.sql(f"""
@@ -280,14 +281,15 @@ class DataStore:
         review_sentiments = self.mooder.analyze_reviews(reviews)
 
         DataStore._logger.info('Ingesting reviews embeddings...')
-        conn.executemany(f"""
-        UPDATE {DataStore.REVIEW_TAB}
-        SET vec = ?, embedded = ?, sentiment = ?
-        WHERE rev_id = ?""", [
-            [embed, 'true', sentiment.lower(), idx]
-            for embed, sentiment, idx
-            in zip(review_embeddings, review_sentiments, ids)
-        ])
+        if ids:
+            conn.executemany(f"""
+            UPDATE {DataStore.REVIEW_TAB}
+            SET vec = ?, embedded = ?, sentiment = ?
+            WHERE rev_id = ?""", [
+                [embed, 'true', sentiment.lower(), idx]
+                for embed, sentiment, idx
+                in zip(review_embeddings, review_sentiments, ids)
+            ])
 
         DataStore._logger.info('Indexing reviews vector space...')
         conn.sql(f"""
@@ -317,25 +319,27 @@ class DataStore:
             [reviews for _, reviews in nested_rev_vectors]
         )
 
-        DataStore._logger.info('Ingesting episodes description-based embeddings...')
-        conn.executemany(f"""
-        UPDATE {DataStore.PODCAST_TAB}
-        SET vec_desc = ?, embedded_desc = ?
-        WHERE podcast_id = ?""", [
-            [embed, 'true', idx]
-            for embed, idx
-            in zip(desc_embeddings, desc_ids)
-        ])
+        if desc_ids:
+            DataStore._logger.info('Ingesting episodes description-based embeddings...')
+            conn.executemany(f"""
+            UPDATE {DataStore.PODCAST_TAB}
+            SET vec_desc = ?, embedded_desc = ?
+            WHERE podcast_id = ?""", [
+                [embed, 'true', idx]
+                for embed, idx
+                in zip(desc_embeddings, desc_ids)
+            ])
 
-        DataStore._logger.info('Ingesting episodes review-based embeddings...')
-        conn.executemany(f"""
-        UPDATE {DataStore.PODCAST_TAB}
-        SET vec_rev = ?, embedded_rev = ?
-        WHERE podcast_id = ?""", [
-            [embed, 'true', idx]
-            for embed, idx
-            in zip(rev_embeddings, rev_ids)
-        ])
+        if rev_ids:
+            DataStore._logger.info('Ingesting episodes review-based embeddings...')
+            conn.executemany(f"""
+            UPDATE {DataStore.PODCAST_TAB}
+            SET vec_rev = ?, embedded_rev = ?
+            WHERE podcast_id = ?""", [
+                [embed, 'true', idx]
+                for embed, idx
+                in zip(rev_embeddings, rev_ids)
+            ])
 
         DataStore._logger.info('Indexing episodes vector space...')
         DataStore._with_transaction(conn, [
@@ -371,39 +375,41 @@ class DataStore:
             [categories for _, _, categories in nested_cat_vectors]
         )
 
-        title_author_desc_couples = [
-            (
-                f"""'{title.replace("'", "''")}'""",
-                f"""'{author.replace("'", "''")}'""")
-            for title, author, _ in nested_desc_vectors
-        ]
+        if nested_desc_vectors:
+            title_author_desc_couples = [
+                (
+                    f"""'{title.replace("'", "''")}'""",
+                    f"""'{author.replace("'", "''")}'""")
+                for title, author, _ in nested_desc_vectors
+            ]
 
-        DataStore._logger.info("Ingesting podcasts description-based embeddings...")
-        conn.executemany(f"""
-        UPDATE {DataStore.PODCAST_EMBEDS}
-        SET vec_desc = ?, embedded_desc = ?
-        WHERE title = ? AND author = ?""", [
-            [embed, 'true', couple[0], couple[1]]
-            for embed, couple
-            in zip(desc_embeds, title_author_desc_couples)
-        ])
+            DataStore._logger.info("Ingesting podcasts description-based embeddings...")
+            conn.executemany(f"""
+            UPDATE {DataStore.PODCAST_EMBEDS}
+            SET vec_desc = ?, embedded_desc = ?
+            WHERE title = ? AND author = ?""", [
+                [embed, 'true', couple[0], couple[1]]
+                for embed, couple
+                in zip(desc_embeds, title_author_desc_couples)
+            ])
 
-        title_author_cat_couples = [
-            (
-                f"""'{title.replace("'", "''")}'""",
-                f"""'{author.replace("'", "''")}'""")
-            for title, author, _ in nested_cat_vectors
-        ]
+        if nested_cat_vectors:
+            title_author_cat_couples = [
+                (
+                    f"""'{title.replace("'", "''")}'""",
+                    f"""'{author.replace("'", "''")}'""")
+                for title, author, _ in nested_cat_vectors
+            ]
 
-        DataStore._logger.info("Ingesting podcasts category-based embeddings...")
-        conn.executemany(f"""
-        UPDATE {DataStore.PODCAST_EMBEDS}
-        SET vec_cat = ?, embedded_cat = ?
-        WHERE title = ? AND author = ?""", [
-            [embed, 'true', couple[0], couple[1]]
-            for embed, couple
-            in zip(cat_embeds, title_author_cat_couples)
-        ])
+            DataStore._logger.info("Ingesting podcasts category-based embeddings...")
+            conn.executemany(f"""
+            UPDATE {DataStore.PODCAST_EMBEDS}
+            SET vec_cat = ?, embedded_cat = ?
+            WHERE title = ? AND author = ?""", [
+                [embed, 'true', couple[0], couple[1]]
+                for embed, couple
+                in zip(cat_embeds, title_author_cat_couples)
+            ])
 
         DataStore._with_transaction(conn, [
             f"""
@@ -425,15 +431,18 @@ class DataStore:
 
         if not table_exists or table_exists[0] < 1: return False
 
-        models_exist = conn.execute(f"""
-        SELECT COUNT(*) FROM {DataStore.META_TAB}
-        WHERE mod_cat = $category
-        AND mod_rev = $review
-        AND mod_pod = $podcast
-        AND mod_sentiment = $sentiment
-        AND emb_summary = $embedding_summary
-        AND sent_summary = $sentiment_summary
-        """, self.embedder.model_names).fetchone()
+        models_exist = None
+        try:
+            models_exist = conn.execute(f"""
+            SELECT COUNT(*) FROM {DataStore.META_TAB}
+            WHERE mod_cat = $category
+            AND mod_rev = $review
+            AND mod_pod = $podcast
+            AND mod_sentiment = $sentiment
+            AND emb_summary = $embedding_summary
+            AND sent_summary = $sentiment_summary
+            """, self.embedder.model_names).fetchone()
+        except: return False
 
         return models_exist is not None and models_exist[0] == 1
 
@@ -582,6 +591,7 @@ class DataStore:
             f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS embedded",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN embedded BOOLEAN DEFAULT false""",
+            f"""ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS sentiment""",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN sentiment VARCHAR DEFAULT 'neutral'""",
             f"""

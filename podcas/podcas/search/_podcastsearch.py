@@ -33,7 +33,9 @@ class PodcastSearch:
         self._fuzzy_author: bool = False
         self._category_emb: Optional[list[float]] = None
         self._desc_emb: Optional[list[float]] = None
-        self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
+        # GPU-POOR so no summarization for me :shrug:
+        # self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
+        self.__summarizer: Optional[Summarizer] = None
         self.__embedder = Embedder(
             category_model = DEFAULT_EMBEDDING_MODEL,
             review_model = DEFAULT_EMBEDDING_MODEL,
@@ -56,9 +58,12 @@ class PodcastSearch:
             review_model: str = DEFAULT_EMBEDDING_MODEL,
             podcast_model: str = DEFAULT_EMBEDDING_MODEL,
             mooder_model: str = DEFAULT_SENTIMENT_MODEL,
-            summary_model: str = DEFAULT_SUMMARIZE_MODEL
+            summary_model: Optional[str] = None
     ):
-        self.__summarizer = Summarizer(summary_model)
+        self.__summarizer = (
+            Summarizer(summary_model)
+            if summary_model else None
+        )
         self.__embedder = Embedder(
             category_model = category_model,
             review_model = review_model,

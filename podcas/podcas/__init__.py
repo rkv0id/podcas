@@ -20,7 +20,7 @@ else:
 
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking"
 DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual"
-DEFAULT_SUMMARIZE_MODEL = "facebook/bart-large-cnn"
+DEFAULT_SUMMARIZE_MODEL = "google/pegasus-xsum"
 
 from .search import PodcastSearch, ReviewSearch
 __all__ = ['PodcastSearch', 'ReviewSearch']

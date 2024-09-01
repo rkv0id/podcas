@@ -1,4 +1,5 @@
 from logging import getLogger
+from typing import Optional
 from transformers import pipeline
 
 from podcas import lib_device
@@ -11,8 +12,8 @@ class Mooder:
     def __init__(
             self,
             model: str,
-            summarizer: Summarizer,
-            max_length: int = 512,
+            summarizer: Optional[Summarizer] = None,
+            max_length: int = 256,
             batch_size: int = 32
     ) -> None:
         self.model_name = model
@@ -35,14 +36,16 @@ class Mooder:
         )
 
     def analyze(self, inputs: list[str]) -> list[str]:
-        summarized = inputs.copy()
-        try: self.summarizer.summarize_inplace(summarized)
-        except Exception as e:
-            Mooder._logger.error(
-                f"Error occured while summarizing: {e}",
-                exc_info=True
-            )
-            raise e
+        if self.summarizer:
+            summarized = inputs.copy()
+            try: self.summarizer.summarize_inplace(summarized)
+            except Exception as e:
+                Mooder._logger.error(
+                    f"Error occured while summarizing: {e}",
+                    exc_info=True
+                )
+                raise e
+        else: summarized = inputs
 
         results = self._analyzer(
             summarized,

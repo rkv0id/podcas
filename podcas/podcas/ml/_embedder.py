@@ -1,4 +1,5 @@
 from logging import getLogger
+from typing import Optional
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoTokenizer
 from tqdm import tqdm
@@ -17,8 +18,8 @@ class Embedder:
             category_model: str,
             review_model: str,
             podcast_model: str,
-            summarizer: Summarizer,
-            max_length: int = 512,
+            summarizer: Optional[Summarizer] = None,
+            max_length: int = 256,
             batch_size: int = 32
     ):
         self.cat_tokenizer = AutoTokenizer.from_pretrained(category_model)
@@ -44,13 +45,15 @@ class Embedder:
         }
 
     def embed_text(self, texts: list[str], tokenizer, model) -> list[torch.Tensor]:
-        summarized = texts.copy()
-        try: self.summarizer.summarize_inplace(summarized)
-        except Exception as e:
-            Embedder._logger.error(
-                f"Error occured while summarizing: {e}",
-                exc_info=True
-            )
+        if self.summarizer:
+            summarized = texts.copy()
+            try: self.summarizer.summarize_inplace(summarized)
+            except Exception as e:
+                Embedder._logger.error(
+                    f"Error occured while summarizing: {e}",
+                    exc_info=True
+                )
+        else: summarized = texts
 
         dataset = TextDataset(summarized)
         dataloader = DataLoader(
@@ -62,7 +65,7 @@ class Embedder:
         all_embeddings = []
         for batch in tqdm(
                 dataloader,
-                total=len(dataset),
+                total=len(dataloader),
                 desc="_embedding"
         ):
             encoded_input = tokenizer(
