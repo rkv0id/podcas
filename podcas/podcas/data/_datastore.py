@@ -30,11 +30,11 @@ class DataStore:
             'sentiment': self.mooder.model_name,
             'sentiment_summary': (
                 self.mooder.summarizer.model_name
-                if self.mooder.summarizer else ""
+                if self.mooder.summarizer else "NO-OP"
             ),
             'embedding_summary': (
                 self.embedder.summarizer.model_name
-                if self.embedder.summarizer else ""
+                if self.embedder.summarizer else "NO-OP"
             )
         }
         self._init_db()
@@ -447,7 +447,7 @@ class DataStore:
             AND mod_sentiment = $sentiment
             AND emb_summary = $embedding_summary
             AND sent_summary = $sentiment_summary
-            """, self.embedder.model_names).fetchone()
+            """, self.model_names).fetchone()
         except: return False
 
         return models_exist is not None and models_exist[0] == 1
@@ -570,18 +570,15 @@ class DataStore:
             CREATE TABLE {DataStore.CATEGORY_EMBEDS}(
                 name VARCHAR PRIMARY KEY,
                 vec FLOAT[{dim}]
-                DEFAULT [0 for x in range({dim})]::FLOAT[{dim}])"""
+                DEFAULT [0 for x in range({dim})]::FLOAT[{dim}],
+                PRIMARY KEY (name))"""
         ])
 
     def _prep_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
         dim = self.embedder.rev_model.config.hidden_size
         DataStore._with_transaction(conn, [
-            f"DROP INDEX IF EXISTS idx_rev",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS vec",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS embedded",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS sentiment",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} DROP COLUMN IF EXISTS rev_id",
-            f"ALTER TABLE {DataStore.REVIEW_TAB} ADD COLUMN rev_id INTEGER",
+            f"""ALTER TABLE {DataStore.REVIEW_TAB}
+            ADD COLUMN IF NOT EXISTS rev_id INTEGER""",
             f"""
             UPDATE {DataStore.REVIEW_TAB}
             SET rev_id = seq.seq_num
@@ -591,12 +588,14 @@ class DataStore:
             ) AS seq
             WHERE {DataStore.REVIEW_TAB}.rowid = seq.rowid""",
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
-            ADD COLUMN vec FLOAT[{dim}]
+            ADD COLUMN IF NOT EXISTS
+            embedded BOOLEAN DEFAULT false""",
+            f"""ALTER TABLE {DataStore.REVIEW_TAB}
+            ADD COLUMN IF NOT EXISTS
+            sentiment VARCHAR DEFAULT 'neutral'""",
+            f"""ALTER TABLE {DataStore.REVIEW_TAB}
+            ADD COLUMN IF NOT EXISTS vec FLOAT[{dim}]
             DEFAULT [0 for x in range({dim})]::FLOAT[{dim}]""",
-            f"""ALTER TABLE {DataStore.REVIEW_TAB}
-            ADD COLUMN embedded BOOLEAN DEFAULT false""",
-            f"""ALTER TABLE {DataStore.REVIEW_TAB}
-            ADD COLUMN sentiment VARCHAR DEFAULT 'neutral'""",
             f"""
             UPDATE {DataStore.REVIEW_TAB} SET
                 vec = [0 for x in range({dim})]::FLOAT[{dim}],
@@ -611,40 +610,23 @@ class DataStore:
         rev_dim = self.embedder.rev_model.config.hidden_size
         DataStore._logger.info('Creating episodes vector store...')
         DataStore._with_transaction(conn, [
-            f"DROP INDEX IF EXISTS idx_ep_desc",
-            f"DROP INDEX IF EXISTS idx_ep_rev",
             f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            DROP COLUMN IF EXISTS ratings_count_value""",
+            ALTER TABLE {DataStore.PODCAST_TAB} ADD COLUMN
+            IF NOT EXISTS ratings_count_value DOUBLE DEFAULT 0""",
             f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            DROP COLUMN IF EXISTS vec_desc""",
+            ALTER TABLE {DataStore.PODCAST_TAB} ADD COLUMN
+            IF NOT EXISTS embedded_desc BOOLEAN DEFAULT false""",
             f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            DROP COLUMN IF EXISTS embedded_desc""",
+            ALTER TABLE {DataStore.PODCAST_TAB} ADD COLUMN
+            IF NOT EXISTS embedded_rev BOOLEAN DEFAULT false""",
             f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            DROP COLUMN IF EXISTS vec_rev""",
-            f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            DROP COLUMN IF EXISTS embedded_rev""",
-            f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            ADD COLUMN ratings_count_value DOUBLE DEFAULT 0""",
-            f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            ADD COLUMN vec_desc FLOAT[{desc_dim}]
+            ALTER TABLE {DataStore.PODCAST_TAB} ADD COLUMN
+            IF NOT EXISTS vec_desc FLOAT[{desc_dim}]
             DEFAULT [0 for x in range({desc_dim})]::FLOAT[{desc_dim}]""",
             f"""
             ALTER TABLE {DataStore.PODCAST_TAB}
-            ADD COLUMN embedded_desc BOOLEAN DEFAULT false""",
-            f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            ADD COLUMN vec_rev FLOAT[{rev_dim}]
+            ADD COLUMN IF NOT EXISTS vec_rev FLOAT[{rev_dim}]
             DEFAULT [0 for x in range({rev_dim})]::FLOAT[{rev_dim}]""",
-            f"""
-            ALTER TABLE {DataStore.PODCAST_TAB}
-            ADD COLUMN embedded_rev BOOLEAN DEFAULT false""",
             f"""
             UPDATE {DataStore.PODCAST_TAB}
             SET title = LOWER(title),
@@ -687,7 +669,8 @@ class DataStore:
                 embedded_cat BOOLEAN DEFAULT false,
                 vec_desc FLOAT[{desc_dim}]
                 DEFAULT [0 for x in range({desc_dim})]::FLOAT[{desc_dim}],
-                embedded_desc BOOLEAN DEFAULT false
+                embedded_desc BOOLEAN DEFAULT false,
+                PRIMARY KEY (title, author)
             )""",
             f"""
             INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author, rating)

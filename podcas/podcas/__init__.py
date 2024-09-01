@@ -22,8 +22,8 @@ DEFAULT_EMBEDDING_MODEL = "sentence-transformers/distilbert-multilingual-nli-sts
 DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual"
 DEFAULT_SUMMARIZE_MODEL = "google/pegasus-xsum"
 
-from .search import PodcastSearch, ReviewSearch
-__all__ = ['PodcastSearch', 'ReviewSearch']
+from .search import PodcastSearch, ReviewSearch, EpisodeSearch
+__all__ = ['PodcastSearch', 'ReviewSearch', 'EpisodeSearch']
 
 
 # EXAMPLE USAGE
