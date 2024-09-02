@@ -384,8 +384,8 @@ class DataStore:
         if nested_desc_vectors:
             title_author_desc_couples = [
                 (
-                    f"""'{title.replace("'", "''")}'""",
-                    f"""'{author.replace("'", "''")}'""")
+                    f"""{title.replace("'", "''")}""",
+                    f"""{author.replace("'", "''")}""")
                 for title, author, _ in nested_desc_vectors
             ]
 
@@ -402,8 +402,8 @@ class DataStore:
         if nested_cat_vectors:
             title_author_cat_couples = [
                 (
-                    f"""'{title.replace("'", "''")}'""",
-                    f"""'{author.replace("'", "''")}'""")
+                    f"""{title.replace("'", "''")}""",
+                    f"""{author.replace("'", "''")}""")
                 for title, author, _ in nested_cat_vectors
             ]
 
@@ -570,12 +570,12 @@ class DataStore:
             CREATE TABLE {DataStore.CATEGORY_EMBEDS}(
                 name VARCHAR PRIMARY KEY,
                 vec FLOAT[{dim}]
-                DEFAULT [0 for x in range({dim})]::FLOAT[{dim}],
-                PRIMARY KEY (name))"""
+                DEFAULT [0 for x in range({dim})]::FLOAT[{dim}])"""
         ])
 
     def _prep_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
         dim = self.embedder.rev_model.config.hidden_size
+        DataStore._logger.info('Creating reviews vector store...')
         DataStore._with_transaction(conn, [
             f"""ALTER TABLE {DataStore.REVIEW_TAB}
             ADD COLUMN IF NOT EXISTS rev_id INTEGER""",
