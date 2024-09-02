@@ -383,9 +383,7 @@ class DataStore:
 
         if nested_desc_vectors:
             title_author_desc_couples = [
-                (
-                    f"""{title.replace("'", "''")}""",
-                    f"""{author.replace("'", "''")}""")
+                (title, author)
                 for title, author, _ in nested_desc_vectors
             ]
 
@@ -401,9 +399,7 @@ class DataStore:
 
         if nested_cat_vectors:
             title_author_cat_couples = [
-                (
-                    f"""{title.replace("'", "''")}""",
-                    f"""{author.replace("'", "''")}""")
+                (title, author)
                 for title, author, _ in nested_cat_vectors
             ]
 
@@ -669,9 +665,7 @@ class DataStore:
                 embedded_cat BOOLEAN DEFAULT false,
                 vec_desc FLOAT[{desc_dim}]
                 DEFAULT [0 for x in range({desc_dim})]::FLOAT[{desc_dim}],
-                embedded_desc BOOLEAN DEFAULT false,
-                PRIMARY KEY (title, author)
-            )""",
+                embedded_desc BOOLEAN DEFAULT false)""",
             f"""
             INSERT INTO {DataStore.PODCAST_EMBEDS} (title, author, rating)
             SELECT title, author, COALESCE(
