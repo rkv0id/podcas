@@ -259,6 +259,8 @@ class DataStore:
         category_embeddings = self.embedder.embed_categories(categories)
 
         DataStore._logger.info('Ingesting categories embeddings...')
+        # TODO: use for loops instead. prepared statements in duckdb
+        # run full table scans for each line :mind-blown:
         if categories:
             conn.executemany(
                 f"""
@@ -368,6 +370,7 @@ class DataStore:
         GROUP BY title, author
         """).fetchall()
 
+        # TODO: join with catV table to get embeddings
         nested_cat_vectors = conn.execute(f"""
         SELECT p.title, p.author, LIST(c.category)
         FROM {DataStore.PODCAST_TAB} p
