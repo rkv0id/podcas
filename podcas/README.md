@@ -30,6 +30,7 @@ This will install `podcas` along with all required dependencies specified in the
 
 ## Usage
 `PodcastSearch`, `EpisodeSearch`, and `ReviewSearch` allow you to find podcasts, episodes of podcasts, and even reviews based on various criteria such as title, author, and ratings. It also supports similarity-based search for some semantic criteria like category, and description.
+You can use this [example "preprocessed" dataset](https://drive.google.com/file/d/1_wmhtsXi6HacZa0qlyZcPo1H2vixLTpE/view?usp=sharing) to explore the library.
 ```python
 from podcas import PodcastSearch, EpisodeSearch
 
