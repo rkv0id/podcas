@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
 from os.path import abspath
+from tqdm import tqdm
 import logging, duckdb
 
 from podcas.ml import Embedder, Mooder
@@ -259,16 +260,14 @@ class DataStore:
         category_embeddings = self.embedder.embed_categories(categories)
 
         DataStore._logger.info('Ingesting categories embeddings...')
-        # TODO: use for loops instead. prepared statements in duckdb
-        # run full table scans for each line :mind-blown:
-        if categories:
-            conn.executemany(
-                f"""
-                INSERT INTO {DataStore.CATEGORY_EMBEDS} VALUES (?, ?)""",
-                [
-                    [category, vector]
-                    for category, vector in category_embeddings.items()
-                ]
+        for category, vector in tqdm(
+                category_embeddings.items(),
+                desc="Ingesting categories embeddings...",
+                total=len(categories)
+        ):
+            conn.execute(
+                f"""INSERT INTO {DataStore.CATEGORY_EMBEDS}
+                VALUES ('{category.replace("'", "''")}', {vector})"""
             )
 
         DataStore._logger.info('Indexing categories vector space...')
@@ -278,26 +277,27 @@ class DataStore:
         WITH (metric = 'cosine')""")
 
     def _embed_reviews(self, conn: duckdb.DuckDBPyConnection) -> None:
-        reviews: list[tuple[int, str, str]] = conn.sql(f"""
+        reviews = conn.sql(f"""
         SELECT rev_id, title, content
         FROM {DataStore.REVIEW_TAB}
         WHERE title IS NOT NULL OR content IS NOT NULL
         """).fetchall()
 
-        ids = [idx for idx, _, _ in reviews]
         review_embeddings = self.embedder.embed_reviews(reviews)
         review_sentiments = self.mooder.analyze_reviews(reviews)
 
-        DataStore._logger.info('Ingesting reviews embeddings...')
-        if ids:
-            conn.executemany(f"""
-            UPDATE {DataStore.REVIEW_TAB}
-            SET vec = ?, embedded = ?, sentiment = ?
-            WHERE rev_id = ?""", [
-                [embed, 'true', sentiment.lower(), idx]
-                for embed, sentiment, idx
-                in zip(review_embeddings, review_sentiments, ids)
-            ])
+        DataStore._case_update(
+            conn,
+            DataStore.REVIEW_TAB,
+            ('vec', 'embedded', 'sentiment'),
+            [
+                (embed, 'true', sentiment.lower())
+                for embed, sentiment in zip(review_embeddings, review_sentiments)
+            ],
+            ('rev_id',),
+            [("'" + idx + "'",) for idx, _, _ in reviews],
+            "Ingesting reviews embeddings"
+        )
 
         DataStore._logger.info('Indexing reviews vector space...')
         conn.sql(f"""
@@ -320,34 +320,30 @@ class DataStore:
         WHERE r.embedded
         GROUP BY p.podcast_id""").fetchall()
 
-        desc_ids = [idx for idx, _ in descriptions]
-        rev_ids = [idx for idx, _ in nested_rev_vectors]
         desc_embeddings, rev_embeddings = self.embedder.embed_episodes(
             [desc for _, desc in descriptions],
             [reviews for _, reviews in nested_rev_vectors]
         )
 
-        if desc_ids:
-            DataStore._logger.info('Ingesting episodes description-based embeddings...')
-            conn.executemany(f"""
-            UPDATE {DataStore.PODCAST_TAB}
-            SET vec_desc = ?, embedded_desc = ?
-            WHERE podcast_id = ?""", [
-                [embed, 'true', idx]
-                for embed, idx
-                in zip(desc_embeddings, desc_ids)
-            ])
+        DataStore._case_update(
+            conn,
+            DataStore.PODCAST_TAB,
+            ('vec_desc', 'embedded_desc'),
+            [(embed, 'true') for embed in desc_embeddings],
+            ('podcast_id',),
+            [("'" + idx + "'",) for idx, _ in descriptions],
+            "Ingesting episodes description-based embeddings..."
+        )
 
-        if rev_ids:
-            DataStore._logger.info('Ingesting episodes review-based embeddings...')
-            conn.executemany(f"""
-            UPDATE {DataStore.PODCAST_TAB}
-            SET vec_rev = ?, embedded_rev = ?
-            WHERE podcast_id = ?""", [
-                [embed, 'true', idx]
-                for embed, idx
-                in zip(rev_embeddings, rev_ids)
-            ])
+        DataStore._case_update(
+            conn,
+            DataStore.PODCAST_TAB,
+            ('vec_rev', 'embedded_rev'),
+            [(embed, 'true') for embed in rev_embeddings],
+            ('podcast_id',),
+            [("'" + idx + "'",) for idx, _ in nested_rev_vectors],
+            "Ingesting episodes review-based embeddings..."
+        )
 
         DataStore._logger.info('Indexing episodes vector space...')
         DataStore._with_transaction(conn, [
@@ -370,13 +366,17 @@ class DataStore:
         GROUP BY title, author
         """).fetchall()
 
-        # TODO: join with catV table to get embeddings
         nested_cat_vectors = conn.execute(f"""
-        SELECT p.title, p.author, LIST(c.category)
+        SELECT p.title, p.author, LIST(e.vec)
         FROM {DataStore.PODCAST_TAB} p
         JOIN {DataStore.CATEGORY_TAB} c
         ON p.podcast_id = c.podcast_id
-        WHERE p.title IS NOT NULL AND p.author IS NOT NULL
+        JOIN {DataStore.CATEGORY_EMBEDS} e
+        ON c.category = e.name
+        WHERE
+            p.title IS NOT NULL
+            AND p.author IS NOT NULL
+            AND c.category IS NOT NULL
         GROUP BY p.author, p.title""").fetchall()
 
         desc_embeds, cat_embeds = self.embedder.embed_podcasts(
@@ -384,37 +384,35 @@ class DataStore:
             [categories for _, _, categories in nested_cat_vectors]
         )
 
-        if nested_desc_vectors:
-            title_author_desc_couples = [
-                (title, author)
-                for title, author, _ in nested_desc_vectors
-            ]
+        DataStore._case_update(
+            conn,
+            DataStore.PODCAST_EMBEDS,
+            ('vec_desc', 'embedded_desc'),
+            [(embed, 'true') for embed in desc_embeds],
+            ('title', 'author'),
+            [
+                (
+                    "'" + title.replace("'", "''") + "'",
+                    "'" + author.replace("'", "''") + "'"
+                ) for title, author, _ in nested_desc_vectors
+            ],
+            "Ingesting podcasts description-based embeddings..."
+        )
 
-            DataStore._logger.info("Ingesting podcasts description-based embeddings...")
-            conn.executemany(f"""
-            UPDATE {DataStore.PODCAST_EMBEDS}
-            SET vec_desc = ?, embedded_desc = ?
-            WHERE title = ? AND author = ?""", [
-                [embed, 'true', couple[0], couple[1]]
-                for embed, couple
-                in zip(desc_embeds, title_author_desc_couples)
-            ])
-
-        if nested_cat_vectors:
-            title_author_cat_couples = [
-                (title, author)
-                for title, author, _ in nested_cat_vectors
-            ]
-
-            DataStore._logger.info("Ingesting podcasts category-based embeddings...")
-            conn.executemany(f"""
-            UPDATE {DataStore.PODCAST_EMBEDS}
-            SET vec_cat = ?, embedded_cat = ?
-            WHERE title = ? AND author = ?""", [
-                [embed, 'true', couple[0], couple[1]]
-                for embed, couple
-                in zip(cat_embeds, title_author_cat_couples)
-            ])
+        DataStore._case_update(
+            conn,
+            DataStore.PODCAST_EMBEDS,
+            ('vec_cat', 'embedded_cat'),
+            [(embed, 'true') for embed in cat_embeds],
+            ('title', 'author'),
+            [
+                (
+                    "'" + title.replace("'", "''") + "'",
+                    "'" + author.replace("'", "''") + "'"
+                ) for title, author, _ in nested_cat_vectors
+            ],
+            "Ingesting podcasts category-based embeddings..."
+        )
 
         DataStore._with_transaction(conn, [
             f"""
@@ -718,20 +716,41 @@ class DataStore:
             raise
 
     @staticmethod
-    def _generate_updates(
+    def _case_update(
+            conn: duckdb.DuckDBPyConnection,
             table: str,
             columns: tuple[str, ...],
             values: list[tuple[Any, ...]],
             condition_cols: tuple[str, ...],
-            condition_values: list[tuple[Any, ...]]
-    ) -> Generator[str, None, None]:
-        for row_conditions, row_values in zip(condition_values, values):
-            yield f"""UPDATE {table} SET
-            {', '.join([f"{col} = {val}" for col, val in zip(columns, row_values)])}
-            WHERE {
-                ' AND '.join([
-                    f"{col} = {val}"
-                    for col, val in zip(condition_cols, row_conditions)
-                ])
-            }
-            """
+            condition_values: list[tuple[Any, ...]],
+            description: str
+    ) -> None:
+        row_num = len(values)
+        assert row_num == len(condition_values)
+        if values: assert len(values[0]) == len(columns)
+        desc = description if description else "Updating..."
+
+        conn.begin()
+        try:
+            for row_conditions, row_values in tqdm(
+                    zip(condition_values, values),
+                    desc=desc,
+                    total=row_num
+            ):
+                query = f"""UPDATE {table} SET
+                {', '.join([f"{col} = {val}" for col, val in zip(columns, row_values)])}
+                WHERE {
+                    ' AND '.join([
+                        f"{col} = {val}"
+                        for col, val in zip(condition_cols, row_conditions)
+                    ])
+                }
+                """
+                conn.execute(query)
+            conn.commit()
+        except Exception as e:
+            DataStore._logger.error(f'Error occured during transaction: {e}', exc_info=True)
+            DataStore._logger.debug(f'Failed query: {query}')
+            DataStore._logger.debug('Rolling back...')
+            conn.rollback()
+            raise
