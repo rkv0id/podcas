@@ -7,6 +7,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11.9"
+fastapi = "^0.113.0"
+uvicorn = {extras = ["standard"], version = "^0.30.6"}
+podcas = {path = "../podcas"}
 
 
 [build-system]
