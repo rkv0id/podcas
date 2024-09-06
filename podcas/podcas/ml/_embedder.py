@@ -206,8 +206,8 @@ class Embedder:
         Embedder._logger.info("Embedding episodes...")
         desc_embeddings = self.embed_text(
             descriptions,
-            self.rev_tokenizer,
-            self.rev_model
+            self.pod_tokenizer,
+            self.pod_model
         )
 
         rev_embeddings = []
