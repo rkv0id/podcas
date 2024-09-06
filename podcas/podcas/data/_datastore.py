@@ -5,6 +5,7 @@ from tqdm import tqdm
 import logging, duckdb
 
 from podcas.ml import Embedder, Mooder
+from .entities import Review, Episode, Podcast
 
 
 class DataStore:
@@ -73,7 +74,7 @@ class DataStore:
             sentiment: Optional[str],
             query_embedding: Optional[list[float]],
             rating_boost: bool
-    ) -> list[tuple[str, str, float, float]]:
+    ) -> list[Review]:
         query = "SELECT title, content, rating,"
 
         if not query_embedding: query += ' 1'
@@ -106,7 +107,10 @@ class DataStore:
                 )
                 result = []
 
-        return result
+        return [
+            Review(title, content, rating, score)
+            for title, content, rating, score in result
+        ]
 
     def get_episodes(
             self,
@@ -119,7 +123,7 @@ class DataStore:
             review_embeddings: Optional[list[float]],
             desc_embeddings: Optional[list[float]],
             rating_boost: bool
-    ) -> list[tuple[str, str, str, float, float]]:
+    ) -> list[Episode]:
         query = """
         SELECT title, author, itunes_id,
             CASE WHEN average_rating IS NULL THEN 0
@@ -177,7 +181,10 @@ class DataStore:
 
         with self._conn() as conn: result = conn.sql(query).fetchall()
 
-        return result
+        return [
+            Episode(title, author, itunes_id, rating, score)
+            for title, author, itunes_id, rating, score in result
+        ]
 
     def get_podcasts(
             self,
@@ -190,7 +197,7 @@ class DataStore:
             category_embeddings: Optional[list[float]],
             desc_embeddings: Optional[list[float]],
             rating_boost: bool
-    ) -> list[tuple[str, str, float, float]]:
+    ) -> list[Podcast]:
         query = "SELECT title, author, rating,"
 
         if not (category_embeddings or desc_embeddings): query += ' 1'
@@ -244,7 +251,10 @@ class DataStore:
 
         with self._conn() as conn: result = conn.sql(query).fetchall()
 
-        return result
+        return [
+            Podcast(title, author, rating, score)
+            for title, author, rating, score in result
+        ]
 
     def _embed_categories(self, conn: duckdb.DuckDBPyConnection) -> None:
         query = f"""

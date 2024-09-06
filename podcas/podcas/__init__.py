@@ -23,7 +23,15 @@ DEFAULT_SENTIMENT_MODEL = "cardiffnlp/twitter-xlm-roberta-base-sentiment-multili
 DEFAULT_SUMMARIZE_MODEL = "google/pegasus-xsum"
 
 from .search import PodcastSearch, ReviewSearch, EpisodeSearch
-__all__ = ['PodcastSearch', 'ReviewSearch', 'EpisodeSearch']
+from .data import Review, Episode, Podcast
+__all__ = [
+    'PodcastSearch',
+    'ReviewSearch',
+    'EpisodeSearch',
+    'Review',
+    'Episode',
+    'Podcast'
+]
 
 
 # EXAMPLE USAGE

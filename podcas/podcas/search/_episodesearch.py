@@ -2,7 +2,7 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from podcas.data import DataStore
+from podcas.data import DataStore, Episode
 from podcas.ml import Embedder, Mooder, Summarizer
 from podcas import (
     DEFAULT_EMBEDDING_MODEL,
@@ -247,7 +247,7 @@ class EpisodeSearch:
         self._desc_emb = embeddings[0].tolist()
         return self
 
-    def get(self) -> list[tuple[str, str, str, float, float]]:
+    def get(self) -> list[Episode]:
         """
         Executes the search and returns the filtered podcast episodes.
 

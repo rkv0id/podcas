@@ -2,7 +2,7 @@ from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
-from podcas.data import DataStore
+from podcas.data import DataStore, Review
 from podcas.ml import Embedder, Mooder, Summarizer
 from podcas import (
     DEFAULT_EMBEDDING_MODEL,
@@ -220,7 +220,7 @@ class ReviewSearch:
         self._query_emb = embeddings[0].tolist()
         return self
 
-    def get(self) -> list[tuple[str, str, float, float]]:
+    def get(self) -> list[Review]:
         """
         Executes the search and returns the filtered reviews.
 
