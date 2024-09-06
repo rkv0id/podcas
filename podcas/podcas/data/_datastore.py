@@ -291,11 +291,11 @@ class DataStore:
             DataStore.REVIEW_TAB,
             ('vec', 'embedded', 'sentiment'),
             [
-                (embed, 'true', sentiment.lower())
+                (embed, 'true', f"'{sentiment.lower()}'")
                 for embed, sentiment in zip(review_embeddings, review_sentiments)
             ],
             ('rev_id',),
-            [("'" + idx + "'",) for idx, _, _ in reviews],
+            [(f"'{idx}'",) for idx, _, _ in reviews],
             "Ingesting reviews embeddings"
         )
 
@@ -331,7 +331,7 @@ class DataStore:
             ('vec_desc', 'embedded_desc'),
             [(embed, 'true') for embed in desc_embeddings],
             ('podcast_id',),
-            [("'" + idx + "'",) for idx, _ in descriptions],
+            [(f"'{idx}'",) for idx, _ in descriptions],
             "Ingesting episodes description-based embeddings..."
         )
 
@@ -341,7 +341,7 @@ class DataStore:
             ('vec_rev', 'embedded_rev'),
             [(embed, 'true') for embed in rev_embeddings],
             ('podcast_id',),
-            [("'" + idx + "'",) for idx, _ in nested_rev_vectors],
+            [(f"'{idx}'",) for idx, _ in nested_rev_vectors],
             "Ingesting episodes review-based embeddings..."
         )
 

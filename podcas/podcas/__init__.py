@@ -27,6 +27,7 @@ __all__ = ['PodcastSearch', 'ReviewSearch', 'EpisodeSearch']
 
 
 # EXAMPLE USAGE
+# from podcas import PodcastSearch
 # default_model = 'multi-qa-MiniLM-L6-cos-v1'
 # print(
 #     PodcastSearch()

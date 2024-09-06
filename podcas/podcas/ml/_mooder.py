@@ -6,6 +6,19 @@ from podcas import lib_device
 from podcas.ml import Summarizer
 
 class Mooder:
+    """
+    A class for analyzing the sentiment of text inputs using a pre-trained sentiment analysis model.
+
+    Attributes:
+        TASK_NAME: The task name used by the transformers pipeline.
+        model_name: The name or path of the sentiment analysis model.
+        max_length: Maximum sequence length for the sentiment analysis.
+        batch_size: Batch size for processing inputs.
+        _analyzer: The sentiment analysis pipeline object.
+        summarizer: Optional summarizer for text preprocessing.
+        labels: A set of sentiment labels supported by the model.
+    """
+
     TASK_NAME = "sentiment-analysis"
     _logger = getLogger(f"{__name__}.{__qualname__}")
 
@@ -16,6 +29,15 @@ class Mooder:
             max_length: int = 256,
             batch_size: int = 32
     ) -> None:
+        """
+        Initializes the Mooder with a specified model, summarizer, and configuration.
+
+        Args:
+            model: The name or path of the sentiment analysis model.
+            summarizer: An optional Summarizer object for preprocessing input texts.
+            max_length: Maximum token length for inputs to the sentiment analysis model.
+            batch_size: Number of texts to process per batch.
+        """
         self.model_name = model
         self.max_length = max_length
         self.batch_size = batch_size
@@ -36,6 +58,18 @@ class Mooder:
         )
 
     def analyze(self, inputs: list[str]) -> list[str]:
+        """
+        Analyzes the sentiment of a list of input texts.
+
+        Args:
+            inputs: A list of texts to analyze.
+
+        Returns:
+            A list of sentiment labels corresponding to each input text.
+
+        Raises:
+            ValueError: If the sentiment analysis pipeline fails.
+        """
         if self.summarizer:
             summarized = inputs.copy()
             try: self.summarizer.summarize_inplace(summarized)
@@ -66,6 +100,15 @@ class Mooder:
             self,
             reviews: list[tuple[int, str, str]]
     ) -> list[str]:
+        """
+        Analyzes the sentiment of a list of reviews.
+
+        Args:
+            reviews: A list of reviews, each represented as a tuple (id, title, content).
+
+        Returns:
+            A list of sentiment labels corresponding to each review.
+        """
         Mooder._logger.info('Analyzing reviews...')
         aggregated = [
             f'{title}:{content}'

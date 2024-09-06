@@ -12,6 +12,36 @@ from podcas import (
 
 
 class ReviewSearch:
+    """
+    Singleton class for managing review searches with embedded text and sentiment analysis.
+
+    Attributes:
+        __instance: A class-level singleton instance of ReviewSearch.
+        __lock: A threading lock to ensure thread-safe singleton creation.
+        _top: Number of top reviews to retrieve.
+        _min: Minimum rating for filtering reviews.
+        _max: Maximum rating for filtering reviews.
+        _rating_boosted: Boolean flag indicating if rating boost is applied.
+        _sentiment: Desired sentiment filter (positive, negative, or neutral).
+        _query_emb: Embedded query vector for similarity matching.
+        __summarizer: Summarizer for text summarization (optional).
+        __embedder: Embedder for generating text embeddings.
+        __mooder: Mooder for sentiment analysis.
+        __db: DataStore object for managing review data.
+
+    Methods:
+        load: Initializes the DataStore with the given data source.
+        using: Configures models for embedding, sentiment analysis, and summarization.
+        top: Sets the number of top reviews to retrieve.
+        rating_boosted: Sets the rating boost flag.
+        by_rating: Filters reviews by rating range.
+        positive: Filters reviews by positive sentiment.
+        negative: Filters reviews by negative sentiment.
+        neutral: Filters reviews by neutral sentiment.
+        by_query: Embeds the query text for similarity-based retrieval.
+        get: Executes the search and returns the filtered reviews.
+    """
+
     __instance = None
     __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
@@ -23,6 +53,9 @@ class ReviewSearch:
         return cls.__instance
 
     def __init__(self):
+        """
+        Initializes the ReviewSearch instance with default configurations.
+        """
         self._top = 3
         self._min = 0
         self._max = 5
@@ -44,6 +77,15 @@ class ReviewSearch:
         )
 
     def load(self, *, source: str) -> Self:
+        """
+        Loads the data source for the review search.
+
+        Args:
+            source: The path or URL of the data source.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self.source = source
         self.__db = DataStore(self.source, self.__embedder, self.__mooder)
         return self
@@ -56,6 +98,19 @@ class ReviewSearch:
             mooder_model: str = DEFAULT_SENTIMENT_MODEL,
             summary_model: Optional[str] = None
     ):
+        """
+        Configures the models used for embedding, sentiment analysis, and summarization.
+
+        Args:
+            category_model: The model name or path for category embedding.
+            review_model: The model name or path for review embedding.
+            podcast_model: The model name or path for podcast embedding.
+            mooder_model: The model name or path for sentiment analysis.
+            summary_model: Optional model name or path for summarization.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self.__summarizer = (
             Summarizer(summary_model)
             if summary_model else None
@@ -73,31 +128,88 @@ class ReviewSearch:
         return self
 
     def top(self, n: int) -> Self:
+        """
+        Sets the number of top reviews to retrieve.
+
+        Args:
+            n: The number of top reviews.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._top = n
         return self
 
     def rating_boosted(self, boost: bool = True) -> Self:
+        """
+        Sets the rating boost flag. Boosting biases
+        the search towards higher-rated reviews.
+
+        Args:
+            boost: Boolean flag to enable or disable rating boost.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._rating_boosted = boost
         return self
 
     def by_rating(self, min: float, max: float = 5.) -> Self:
+        """
+        Filters reviews by a specified rating range.
+
+        Args:
+            min: Minimum rating for filtering.
+            max: Maximum rating for filtering.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._min = min
         self._max = max
         return self
 
     def positive(self) -> Self:
+        """
+        Filters reviews by positive sentiment.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._sentiment = 'positive'
         return self
 
     def negative(self) -> Self:
+        """
+        Filters reviews by positive sentiment.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._sentiment = 'negative'
         return self
 
     def neutral(self) -> Self:
+        """
+        Filters reviews by neutral sentiment.
+        (if applicable according to model used)
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         self._sentiment = 'neutral'
         return self
 
     def by_query(self, query: str) -> Self:
+        """
+        Embeds the query text for similarity-based retrieval.
+
+        Args:
+            query: The query text to embed.
+
+        Returns:
+            Self: Returns the ReviewSearch instance.
+        """
         ReviewSearch._logger.info("Embedding query...")
         embeddings = self.__embedder.embed_text(
             [query],
@@ -109,6 +221,12 @@ class ReviewSearch:
         return self
 
     def get(self) -> list[tuple[str, str, float, float]]:
+        """
+        Executes the search and returns the filtered reviews.
+
+        Returns:
+            A list of tuples containing review data (title, content, rating, similarity score).
+        """
         ReviewSearch._logger.info("Executing query...")
         reviews = self.__db.get_reviews(
             self._top,
