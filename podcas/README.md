@@ -67,3 +67,23 @@ episode_results = (
 for title, author, itunes_id, rating, similarity_score in episode_results:
     print(f"Podcast: {podcast_title}, Author: {author}, iTunes ID: {itunes_id}, Rating: {rating}, Score: {similarity_score}")
 ```
+
+## Configuration and Models
+`podcas` uses pre-trained models for embeddings, summarization, and sentiment analysis. The default models are:
+- Embedding Model: `sentence-transformers/distilbert-multilingual-nli-stsb-quora-ranking`
+- Sentiment Model: `cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual`
+- Summarization Model: `google/pegasus-xsum`
+
+You can specify different models through the `.using()` method according to your needs.
+
+## Device Support
+`podcas` automatically selects the best available device:
+- CUDA: For NVIDIA GPUs.
+- MPS: For Apple M/x GPUs.
+- CPU: When no GPU is available.
+
+## Contributing
+Contributions are welcome! Please submit a pull request or open an issue on GitHub to suggest improvements, report bugs, or propose new features.
+
+## Contact
+For questions or support, please contact ramy.kader.rk@gmail.com or open an issue on GitHub.
