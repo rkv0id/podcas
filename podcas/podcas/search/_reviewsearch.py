@@ -27,7 +27,7 @@ class ReviewSearch:
         __summarizer: Summarizer for text summarization (optional).
         __embedder: Embedder for generating text embeddings.
         __mooder: Mooder for sentiment analysis.
-        __db: DataStore object for managing review data.
+        _db: DataStore object for managing review data.
 
     Methods:
         load: Initializes the DataStore with the given data source.
@@ -56,6 +56,7 @@ class ReviewSearch:
         """
         Initializes the ReviewSearch instance with default configurations.
         """
+        self._db = None
         self._top = 3
         self._min = 0
         self._max = 5
@@ -87,7 +88,7 @@ class ReviewSearch:
             Self: Returns the ReviewSearch instance.
         """
         self.source = source
-        self.__db = DataStore(self.source, self.__embedder, self.__mooder)
+        self._db = DataStore(self.source, self.__embedder, self.__mooder)
         return self
 
     def using(
@@ -228,19 +229,24 @@ class ReviewSearch:
             A list of tuples containing review data (title, content, rating, similarity score).
         """
         ReviewSearch._logger.info("Executing query...")
-        reviews = self.__db.get_reviews(
-            self._top,
-            (self._min, self._max),
-            self._sentiment,
-            self._query_emb,
-            self._rating_boosted
-        )
+        if self._db:
+            reviews = self._db.get_reviews(
+                self._top,
+                (self._min, self._max),
+                self._sentiment,
+                self._query_emb,
+                self._rating_boosted
+            )
 
-        self._top = 3
-        self._min = 0
-        self._max = 5
-        self._rating_boosted = False
-        self._sentiment = None
-        self._query_emb = None
+            self._top = 3
+            self._min = 0
+            self._max = 5
+            self._rating_boosted = False
+            self._sentiment = None
+            self._query_emb = None
 
-        return reviews
+            return reviews
+        else:
+            error = "Cannot fetch results. Datastore not initialised!"
+            ReviewSearch._logger.error(error)
+            raise ValueError(error)

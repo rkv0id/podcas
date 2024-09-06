@@ -32,7 +32,7 @@ class PodcastSearch:
         __summarizer: Summarizer for text summarization (optional).
         __embedder: Embedder for generating text embeddings.
         __mooder: Mooder for sentiment analysis.
-        __db: DataStore object for managing podcast data.
+        _db: DataStore object for managing podcast data.
 
     Methods:
         load: Initializes the DataStore with the given data source.
@@ -61,6 +61,7 @@ class PodcastSearch:
         """
         Initializes the PodcastSearch instance with default configurations.
         """
+        self._db = None
         self._top = 3
         self._min = 0
         self._max = 5
@@ -96,7 +97,7 @@ class PodcastSearch:
             Self: Returns the PodcastSearch instance.
         """
         self.source = source
-        self.__db = DataStore(self.source, self.__embedder, self.__mooder)
+        self._db = DataStore(self.source, self.__embedder, self.__mooder)
         return self
 
     def using(
@@ -267,27 +268,32 @@ class PodcastSearch:
             ).
         """
         PodcastSearch._logger.info("Executing query...")
-        podcasts = self.__db.get_podcasts(
-            self._top,
-            (self._min, self._max),
-            self._title,
-            self._fuzzy_title,
-            self._author,
-            self._fuzzy_author,
-            self._category_emb,
-            self._desc_emb,
-            self._rating_boosted
-        )
+        if self._db:
+            podcasts = self._db.get_podcasts(
+                self._top,
+                (self._min, self._max),
+                self._title,
+                self._fuzzy_title,
+                self._author,
+                self._fuzzy_author,
+                self._category_emb,
+                self._desc_emb,
+                self._rating_boosted
+            )
 
-        self._top = 3
-        self._min = 0
-        self._max = 5
-        self._rating_boosted = False
-        self._title = None
-        self._fuzzy_title = False
-        self._author = None
-        self._fuzzy_author = False
-        self._category_emb = None
-        self._desc_emb = None
+            self._top = 3
+            self._min = 0
+            self._max = 5
+            self._rating_boosted = False
+            self._title = None
+            self._fuzzy_title = False
+            self._author = None
+            self._fuzzy_author = False
+            self._category_emb = None
+            self._desc_emb = None
 
-        return podcasts
+            return podcasts
+        else:
+            error = "Cannot fetch results. Datastore not initialised!"
+            PodcastSearch._logger.error(error)
+            raise ValueError(error)
