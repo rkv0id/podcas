@@ -2,15 +2,30 @@ from os.path import isfile
 from huggingface_hub import model_info
 from typing import Literal, Optional, Self
 from pydantic import BaseModel, Field, model_validator
+from podcas import (
+    DEFAULT_SUMMARIZE_MODEL,
+    DEFAULT_SENTIMENT_MODEL,
+    DEFAULT_EMBEDDING_MODEL
+)
 
 
 class BaseSearchParams(BaseModel):
     db_file: str = Field(description="Data source file to embed/explore")
-    category_model: Optional[str] = Field(None, description="Categories embedding model")
-    review_model: Optional[str] = Field(None, description="Reviews embedding model")
-    podcast_model: Optional[str] = Field(None, description="Podcasts embedding model")
-    summarizer_model: Optional[str] = Field(None, description="Summarization model")
-    sentiment_model: Optional[str] = Field(None, description="Sentiment analysis model")
+    category_model: str = Field(
+        DEFAULT_EMBEDDING_MODEL,
+        description="Categories embedding model")
+    review_model: str = Field(
+        DEFAULT_EMBEDDING_MODEL,
+        description="Reviews embedding model")
+    podcast_model: str = Field(
+        DEFAULT_EMBEDDING_MODEL,
+        description="Podcasts embedding model")
+    summarizer_model: str = Field(
+        DEFAULT_SUMMARIZE_MODEL,
+        description="Summarization model")
+    sentiment_model: str = Field(
+        DEFAULT_SENTIMENT_MODEL,
+        description="Sentiment analysis model")
     top: int = Field(
         default=3,
         ge=1, le=100,
