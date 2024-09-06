@@ -111,9 +111,11 @@ class PodcastSearchParams(BaseSearchParams):
 
     @model_validator(mode="before")
     @classmethod
-    def transform_episode(cls, values):
+    def transform_podcast(cls, values):
         title = values.get('title', '')
         author = values.get('author', '')
+        category = values.get('category', '')
         if title: values['title'] = title.lower()
         if author: values['author'] = author.lower()
+        if category: values['category'] = category.lower()
         return values
