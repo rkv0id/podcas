@@ -267,7 +267,7 @@ class EpisodeSearch:
             ).
         """
         EpisodeSearch._logger.info("Executing query...")
-        podcasts = self.__db.get_episodes(
+        episodes = self.__db.get_episodes(
             self._top,
             (self._min, self._max),
             self._title,
@@ -290,4 +290,4 @@ class EpisodeSearch:
         self._rev_emb = None
         self._desc_emb = None
 
-        return podcasts
+        return episodes
