@@ -45,11 +45,16 @@ class PodcastSearch:
 
     __logger = getLogger(f"{__name__}.{__qualname__}")
 
-    def __init__(self):
+    def __init__(
+            self,
+            db: Optional[DataStore] = None,
+            embedder: Optional[Embedder] = None,
+            mooder: Optional[Mooder] = None
+    ):
         """
         Initializes the PodcastSearch instance with default configurations.
         """
-        self._db = None
+        self._db = db
         self._top = 3
         self._min = 0
         self._max = 5
@@ -63,13 +68,13 @@ class PodcastSearch:
         # GPU-POOR so no summarization for me :shrug:
         # self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
         self._summarizer: Optional[Summarizer] = None
-        self._embedder = Embedder(
+        self._embedder = embedder if embedder else Embedder(
             category_model = DEFAULT_EMBEDDING_MODEL,
             review_model = DEFAULT_EMBEDDING_MODEL,
             podcast_model = DEFAULT_EMBEDDING_MODEL,
             summarizer = self._summarizer
         )
-        self._mooder = Mooder(
+        self._mooder = mooder if mooder else Mooder(
             model = DEFAULT_SENTIMENT_MODEL,
             summarizer = self._summarizer
         )
