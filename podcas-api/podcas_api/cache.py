@@ -1,59 +1,50 @@
-from typing import Optional, Self
+from asyncio import Lock, to_thread
+from collections import OrderedDict
 from podcas.data import DataStore
+from podcas.ml import Embedder, Mooder
 
 
-class Node:
-    def __init__(
-        self,
-        key: str,
-        val: Optional[DataStore] = None,
-        prv: Optional[Self] = None,
-        nxt: Optional[Self] = None
-    ):
-        self.key = key
-        self.val = val
-        self.prv = prv
-        self.nxt = nxt
+# Currently only handles (file -> DataStore) relationship
+# although DataStore atomicity is defined by (file, **models)
+# TODO: Transform key to (file, **models) and handle file duplication
+# TODO: consider creating a data pull/clone and file server-side caching
+# to avoid collisions in data sources (due to library mutating data)
+class DataStoreLRUCache:
+    def __init__(self, capacity: int) -> None:
+        self.__lock = Lock()
+        self.__capacity = capacity
+        self.__size = 0
+        self.__cache: OrderedDict[str, DataStore] = OrderedDict()
+        self.__cache_lock: dict[str, Lock] = {}
 
-class LRUCache:
-    def __init__(self, capacity: int):
-        assert capacity > 0
-        self.__capacity: int = capacity
-        self.__size: int = 0
-        self.__cache: dict[str, Node] = {}
-        self.__oldest: Node = Node("oldest__")
-        self.__recent: Node = Node("__recent")
-        self.__oldest.nxt = self.__recent
-        self.__recent.prv = self.__oldest
+    async def get(
+            self,
+            path: str,
+            embedder: Embedder,
+            mooder: Mooder
+    ) -> DataStore:
+        async with self.__lock:
+            if path in self.__cache:
+                self.__cache.move_to_end(path)
+                return self.__cache[path]
 
-    def get(self, key: str) -> Optional[DataStore]:
-        if key in self.__cache:
-            node = self.__cache[key]
-            self.__remove(node)
-            self.__insert(node)
-            return node.val
-        else: return None
+            if path not in self.__cache_lock:
+                self.__cache_lock[path] = Lock()
 
-    def put(self, key: str, value: DataStore) -> None:
-        if key not in self.__cache: self.__size += 1
-        else: self.__remove(self.__cache[key])
-        self.__cache[key] = Node(key, value)
-        self.__insert(self.__cache[key])
+        async with self.__cache_lock[path]:
+            async with self.__lock:
+                if path in self.__cache:
+                    self.__cache.move_to_end(path)
+                    return self.__cache[path]
 
-        if self.__size > self.__capacity:
-            lru = self.__oldest.nxt
-            if lru:
-                self.__remove(lru)
-                del self.__cache[lru.key], lru
-                self.__size -= 1
+            datastore = await to_thread(DataStore, path, embedder, mooder)
 
-    def __remove(self, node: Node) -> None:
-        if node.prv: node.prv.nxt = node.nxt
-        if node.nxt: node.nxt.prv = node.prv
+            async with self.__lock:
+                self.__cache[path] = datastore
+                self.__cache.move_to_end(path)
+                self.__size += 1
+                if self.__size > self.__capacity:
+                    oldest, _ = self.__cache.popitem(last=False)
+                    del self.__cache_lock[oldest]
 
-    def __insert(self, node: Node) -> None:
-        node.prv = self.__recent.prv
-        node.nxt = self.__recent
-        if self.__recent.prv:
-            self.__recent.prv.nxt = node
-            self.__recent.prv = node
+            return datastore
