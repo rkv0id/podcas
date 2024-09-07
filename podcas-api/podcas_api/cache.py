@@ -11,6 +11,7 @@ from podcas.ml import Embedder, Mooder, Summarizer
 # TODO: consider creating a data pull/clone and file server-side caching
 # to avoid collisions in data sources (due to library mutating data)
 class DataStoreLRUCache:
+    "Cache implementation for DataStore objects with LRU eviction policy."
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity
@@ -51,6 +52,7 @@ class DataStoreLRUCache:
             return datastore
 
 class EmbedderLRUCache:
+    "Cache implementation for Embedder objects with LRU eviction policy."
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity
@@ -115,6 +117,7 @@ class EmbedderLRUCache:
             return embedder
 
 class MooderLRUCache:
+    "Cache implementation for Mooder objects with LRU eviction policy."
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity

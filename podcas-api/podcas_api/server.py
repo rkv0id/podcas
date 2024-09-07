@@ -17,6 +17,12 @@ app = FastAPI()
 
 @app.post("/search/reviews")
 async def search_reviews(params: ReviewSearchParams):
+    """
+    Endpoint to search for reviews based on specified parameters.
+
+    :param params: ReviewSearchParams object containing search criteria.
+    :return: List of matched reviews.
+    """
     embedder = await embedder_cache.get(
         params.category_model,
         params.review_model,
@@ -51,6 +57,12 @@ async def search_reviews(params: ReviewSearchParams):
 
 @app.post("/search/episodes")
 async def search_episodes(params: EpisodeSearchParams):
+    """
+    Endpoint to search for episodes based on specified parameters.
+
+    :param params: EpisodeSearchParams object containing search criteria.
+    :return: List of matched episodes.
+    """
     embedder = await embedder_cache.get(
         params.category_model,
         params.review_model,
@@ -89,6 +101,12 @@ async def search_episodes(params: EpisodeSearchParams):
 
 @app.post("/search/podcasts")
 async def search_podcasts(params: PodcastSearchParams):
+    """
+    Endpoint to search for podcasts based on specified parameters.
+
+    :param params: PodcastSearchParams object containing search criteria.
+    :return: List of matched podcasts.
+    """
     embedder = await embedder_cache.get(
         params.category_model,
         params.review_model,
