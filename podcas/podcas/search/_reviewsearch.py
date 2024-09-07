@@ -16,7 +16,6 @@ class ReviewSearch:
 
     Attributes:
         __instance: A class-level singleton instance of ReviewSearch.
-        __lock: A threading lock to ensure thread-safe singleton creation.
         _top: Number of top reviews to retrieve.
         _min: Minimum rating for filtering reviews.
         _max: Maximum rating for filtering reviews.

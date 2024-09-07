@@ -16,7 +16,6 @@ class PodcastSearch:
 
     Attributes:
         __instance: A class-level singleton instance of PodcastSearch.
-        __lock: A threading lock to ensure thread-safe singleton creation.
         _logger: Logger instance for the class.
         _top: Number of top podcasts to retrieve.
         _min: Minimum rating for filtering podcasts.
