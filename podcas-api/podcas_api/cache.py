@@ -1,7 +1,8 @@
 from asyncio import Lock, to_thread
 from collections import OrderedDict
+from typing import Optional
 from podcas.data import DataStore
-from podcas.ml import Embedder, Mooder
+from podcas.ml import Embedder, Mooder, Summarizer
 
 
 # Currently only handles (file -> DataStore) relationship
@@ -48,3 +49,118 @@ class DataStoreLRUCache:
                     del self.__cache_lock[oldest]
 
             return datastore
+
+class EmbedderLRUCache:
+    def __init__(self, capacity: int) -> None:
+        self.__lock = Lock()
+        self.__capacity = capacity
+        self.__size = 0
+        self.__cache: OrderedDict[
+            tuple[str, str, str, Optional[str]],
+            Embedder
+        ] = OrderedDict()
+        self.__cache_lock: dict[
+            tuple[str, str, str, Optional[str]],
+            Lock
+        ] = {}
+
+    async def get(
+            self,
+            category_model: str,
+            review_model: str,
+            podcast_model: str,
+            summarizer: Optional[str]
+    ) -> Embedder:
+        key = (
+            category_model,
+            review_model,
+            podcast_model,
+            summarizer
+        )
+
+        async with self.__lock:
+            if key in self.__cache:
+                self.__cache.move_to_end(key)
+                return self.__cache[key]
+
+            if key not in self.__cache_lock:
+                self.__cache_lock[key] = Lock()
+
+        async with self.__cache_lock[key]:
+            async with self.__lock:
+                if key in self.__cache:
+                    self.__cache.move_to_end(key)
+                    return self.__cache[key]
+
+            summarizer_instance = (
+                None if not summarizer
+                else await to_thread(Summarizer, summarizer)
+            )
+            embedder = await to_thread(
+                Embedder,
+                category_model,
+                review_model,
+                podcast_model,
+                summarizer_instance
+            )
+
+            async with self.__lock:
+                self.__cache[key] = embedder
+                self.__cache.move_to_end(key)
+                self.__size += 1
+                if self.__size > self.__capacity:
+                    oldest, _ = self.__cache.popitem(last=False)
+                    del self.__cache_lock[oldest]
+
+            return embedder
+
+class MooderLRUCache:
+    def __init__(self, capacity: int) -> None:
+        self.__lock = Lock()
+        self.__capacity = capacity
+        self.__size = 0
+        self.__cache: OrderedDict[
+            tuple[str, Optional[str]],
+            Mooder
+        ] = OrderedDict()
+        self.__cache_lock: dict[
+            tuple[str, Optional[str]],
+            Lock
+        ] = {}
+
+    async def get(
+            self,
+            model: str,
+            summarizer: Optional[str]
+    ) -> Mooder:
+        key = (model, summarizer)
+
+        async with self.__lock:
+            if key in self.__cache:
+                self.__cache.move_to_end(key)
+                return self.__cache[key]
+
+            if key not in self.__cache_lock:
+                self.__cache_lock[key] = Lock()
+
+        async with self.__cache_lock[key]:
+            async with self.__lock:
+                if key in self.__cache:
+                    self.__cache.move_to_end(key)
+                    return self.__cache[key]
+
+            summarizer_instance = (
+                None if not summarizer
+                else await to_thread(Summarizer, summarizer)
+            )
+            mooder = await to_thread(Mooder, model, summarizer_instance)
+
+            async with self.__lock:
+                self.__cache[key] = mooder
+                self.__cache.move_to_end(key)
+                self.__size += 1
+                if self.__size > self.__capacity:
+                    oldest, _ = self.__cache.popitem(last=False)
+                    del self.__cache_lock[oldest]
+
+            return mooder
