@@ -12,11 +12,9 @@ from podcas import (
 
 class PodcastSearch:
     """
-    Singleton class for managing podcast search with embedded text and misc filters.
+    Class for managing podcast search with embedded text and misc filters.
 
     Attributes:
-        __instance: A class-level singleton instance of PodcastSearch.
-        _logger: Logger instance for the class.
         _top: Number of top podcasts to retrieve.
         _min: Minimum rating for filtering podcasts.
         _max: Maximum rating for filtering podcasts.
@@ -27,9 +25,9 @@ class PodcastSearch:
         _fuzzy_author: Boolean flag indicating if fuzzy matching should be applied to the author.
         _category_emb: Embedded category vector for similarity matching.
         _desc_emb: Embedded description vector for similarity matching.
-        __summarizer: Summarizer for text summarization (optional).
-        __embedder: Embedder for generating text embeddings.
-        __mooder: Mooder for sentiment analysis.
+        _summarizer: Summarizer for text summarization (optional).
+        _embedder: Embedder for generating text embeddings.
+        _mooder: Mooder for sentiment analysis.
         _db: DataStore object for managing podcast data.
 
     Methods:
@@ -45,13 +43,7 @@ class PodcastSearch:
         get: Executes the search and returns the filtered podcasts.
     """
 
-    __instance = None
-    _logger = getLogger(f"{__name__}.{__qualname__}")
-
-    def __new__(cls, *args, **kwargs):
-        if not cls.__instance:
-            cls.__instance = super(PodcastSearch, cls).__new__(cls)
-        return cls.__instance
+    __logger = getLogger(f"{__name__}.{__qualname__}")
 
     def __init__(self):
         """
@@ -70,16 +62,16 @@ class PodcastSearch:
         self._desc_emb: Optional[list[float]] = None
         # GPU-POOR so no summarization for me :shrug:
         # self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
-        self.__summarizer: Optional[Summarizer] = None
-        self.__embedder = Embedder(
+        self._summarizer: Optional[Summarizer] = None
+        self._embedder = Embedder(
             category_model = DEFAULT_EMBEDDING_MODEL,
             review_model = DEFAULT_EMBEDDING_MODEL,
             podcast_model = DEFAULT_EMBEDDING_MODEL,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
-        self.__mooder = Mooder(
+        self._mooder = Mooder(
             model = DEFAULT_SENTIMENT_MODEL,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
 
     def load(self, *, source: str) -> Self:
@@ -92,8 +84,7 @@ class PodcastSearch:
         Returns:
             Self: Returns the PodcastSearch instance.
         """
-        self.source = source
-        self._db = DataStore(self.source, self.__embedder, self.__mooder)
+        self._db = DataStore(source, self._embedder, self._mooder)
         return self
 
     def using(
@@ -117,19 +108,19 @@ class PodcastSearch:
         Returns:
             Self: Returns the PodcastSearch instance.
         """
-        self.__summarizer = (
+        self._summarizer = (
             Summarizer(summary_model)
             if summary_model else None
         )
-        self.__embedder = Embedder(
+        self._embedder = Embedder(
             category_model = category_model,
             review_model = review_model,
             podcast_model = podcast_model,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
-        self.__mooder = Mooder(
+        self._mooder = Mooder(
             model = mooder_model,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
         return self
 
@@ -215,11 +206,11 @@ class PodcastSearch:
         Returns:
             Self: Returns the PodcastSearch instance.
         """
-        PodcastSearch._logger.info("Embedding category query...")
-        embeddings = self.__embedder.embed_text(
+        PodcastSearch.__logger.info("Embedding category query...")
+        embeddings = self._embedder.embed_text(
             [category],
-            self.__embedder.cat_tokenizer,
-            self.__embedder.cat_model
+            self._embedder.cat_tokenizer,
+            self._embedder.cat_model
         )
 
         self._category_emb = embeddings[0].tolist()
@@ -235,11 +226,11 @@ class PodcastSearch:
         Returns:
             Self: Returns the PodcastSearch instance.
         """
-        PodcastSearch._logger.info("Embedding description query...")
-        embeddings = self.__embedder.embed_text(
+        PodcastSearch.__logger.info("Embedding description query...")
+        embeddings = self._embedder.embed_text(
             [query],
-            self.__embedder.pod_tokenizer,
-            self.__embedder.pod_model
+            self._embedder.pod_tokenizer,
+            self._embedder.pod_model
         )
 
         self._desc_emb = embeddings[0].tolist()
@@ -263,7 +254,7 @@ class PodcastSearch:
                 similarity score
             ).
         """
-        PodcastSearch._logger.info("Executing query...")
+        PodcastSearch.__logger.info("Executing query...")
         if self._db:
             podcasts = self._db.get_podcasts(
                 self._top,
@@ -291,5 +282,5 @@ class PodcastSearch:
             return podcasts
         else:
             error = "Cannot fetch results. Datastore not initialised!"
-            PodcastSearch._logger.error(error)
+            PodcastSearch.__logger.error(error)
             raise ValueError(error)

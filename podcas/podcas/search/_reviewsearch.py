@@ -12,19 +12,18 @@ from podcas import (
 
 class ReviewSearch:
     """
-    Singleton class for managing review searches with embedded text and sentiment analysis.
+    Class for managing review searches with embedded text and sentiment analysis.
 
     Attributes:
-        __instance: A class-level singleton instance of ReviewSearch.
         _top: Number of top reviews to retrieve.
         _min: Minimum rating for filtering reviews.
         _max: Maximum rating for filtering reviews.
         _rating_boosted: Boolean flag indicating if rating boost is applied.
         _sentiment: Desired sentiment filter (positive, negative, or neutral).
         _query_emb: Embedded query vector for similarity matching.
-        __summarizer: Summarizer for text summarization (optional).
-        __embedder: Embedder for generating text embeddings.
-        __mooder: Mooder for sentiment analysis.
+        _summarizer: Summarizer for text summarization (optional).
+        _embedder: Embedder for generating text embeddings.
+        _mooder: Mooder for sentiment analysis.
         _db: DataStore object for managing review data.
 
     Methods:
@@ -40,13 +39,7 @@ class ReviewSearch:
         get: Executes the search and returns the filtered reviews.
     """
 
-    __instance = None
-    _logger = getLogger(f"{__name__}.{__qualname__}")
-
-    def __new__(cls, *args, **kwargs):
-        if not cls.__instance:
-            cls.__instance = super(ReviewSearch, cls).__new__(cls)
-        return cls.__instance
+    __logger = getLogger(f"{__name__}.{__qualname__}")
 
     def __init__(self):
         """
@@ -60,17 +53,17 @@ class ReviewSearch:
         self._sentiment: Optional[str] = None
         self._query_emb: Optional[list[float]] = None
         # GPU-POOR so no summarization for me :shrug:
-        # self.__summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
-        self.__summarizer: Optional[Summarizer] = None
-        self.__embedder = Embedder(
+        # self._summarizer = Summarizer(DEFAULT_SUMMARIZE_MODEL)
+        self._summarizer: Optional[Summarizer] = None
+        self._embedder = Embedder(
             category_model = DEFAULT_EMBEDDING_MODEL,
             review_model = DEFAULT_EMBEDDING_MODEL,
             podcast_model = DEFAULT_EMBEDDING_MODEL,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
-        self.__mooder = Mooder(
+        self._mooder = Mooder(
             model = DEFAULT_SENTIMENT_MODEL,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
 
     def load(self, *, source: str) -> Self:
@@ -83,8 +76,7 @@ class ReviewSearch:
         Returns:
             Self: Returns the ReviewSearch instance.
         """
-        self.source = source
-        self._db = DataStore(self.source, self.__embedder, self.__mooder)
+        self._db = DataStore(source, self._embedder, self._mooder)
         return self
 
     def using(
@@ -108,19 +100,19 @@ class ReviewSearch:
         Returns:
             Self: Returns the ReviewSearch instance.
         """
-        self.__summarizer = (
+        self._summarizer = (
             Summarizer(summary_model)
             if summary_model else None
         )
-        self.__embedder = Embedder(
+        self._embedder = Embedder(
             category_model = category_model,
             review_model = review_model,
             podcast_model = podcast_model,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
-        self.__mooder = Mooder(
+        self._mooder = Mooder(
             model = mooder_model,
-            summarizer = self.__summarizer
+            summarizer = self._summarizer
         )
         return self
 
@@ -207,11 +199,11 @@ class ReviewSearch:
         Returns:
             Self: Returns the ReviewSearch instance.
         """
-        ReviewSearch._logger.info("Embedding query...")
-        embeddings = self.__embedder.embed_text(
+        ReviewSearch.__logger.info("Embedding query...")
+        embeddings = self._embedder.embed_text(
             [query],
-            self.__embedder.rev_tokenizer,
-            self.__embedder.rev_model
+            self._embedder.rev_tokenizer,
+            self._embedder.rev_model
         )
 
         self._query_emb = embeddings[0].tolist()
@@ -224,7 +216,7 @@ class ReviewSearch:
         Returns:
             A list of tuples containing review data (title, content, rating, similarity score).
         """
-        ReviewSearch._logger.info("Executing query...")
+        ReviewSearch.__logger.info("Executing query...")
         if self._db:
             reviews = self._db.get_reviews(
                 self._top,
@@ -244,5 +236,5 @@ class ReviewSearch:
             return reviews
         else:
             error = "Cannot fetch results. Datastore not initialised!"
-            ReviewSearch._logger.error(error)
+            ReviewSearch.__logger.error(error)
             raise ValueError(error)
