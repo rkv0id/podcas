@@ -1,4 +1,3 @@
-from threading import Lock
 from logging import getLogger
 from typing import Optional, Self
 
@@ -47,13 +46,11 @@ class EpisodeSearch:
     """
 
     __instance = None
-    __lock = Lock()
     _logger = getLogger(f"{__name__}.{__qualname__}")
 
     def __new__(cls, *args, **kwargs):
-        with cls.__lock:
-            if not cls.__instance:
-                cls.__instance = super(EpisodeSearch, cls).__new__(cls)
+        if not cls.__instance:
+            cls.__instance = super(EpisodeSearch, cls).__new__(cls)
         return cls.__instance
 
     def __init__(self):
