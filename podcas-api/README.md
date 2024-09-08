@@ -50,6 +50,14 @@ The caching system uses asynchronous locks to prevent race conditions and ensure
 
 Please check out the Podcas library for more details about the inner workings of this service as this is just an API layer exposing that library's functionality under different endpoints.
 
+## TODO
+- [ ] Cache key from `file` to `(file, **models)`.
+- [ ] File server-side caching to avoid mutation collisions.
+- [ ] Validate data sources based on required schema
+- [ ] Logging :mag:
+- [ ] Testing :sleepy:
+- [ ] Stress test & benchmark endpoints
+
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue on GitHub to suggest improvements, report bugs, or propose new features.
 

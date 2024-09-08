@@ -83,6 +83,12 @@ You can specify different models through the `.using()` method according to your
 - MPS: For Apple M/x GPUs.
 - CPU: When no GPU is available.
 
+## TODO
+- [ ] Thread-safety docstrings
+- [ ] Data source assertion on required schema
+- [ ] Testing :sleepy:
+- [ ] Low-compute options (ex: TF-IDF, BM25, PL2 ...)
+
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue on GitHub to suggest improvements, report bugs, or propose new features.
 
