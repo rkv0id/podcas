@@ -12,6 +12,17 @@ from podcas.ml import Embedder, Mooder, Summarizer
 # to avoid collisions in data sources (due to library mutating data)
 class DataStoreLRUCache:
     "Cache implementation for DataStore objects with LRU eviction policy."
+
+    _instance = None
+    _instance_lock = Lock()
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            async with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity
@@ -53,6 +64,17 @@ class DataStoreLRUCache:
 
 class EmbedderLRUCache:
     "Cache implementation for Embedder objects with LRU eviction policy."
+
+    _instance = None
+    _instance_lock = Lock()
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            async with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity
@@ -118,6 +140,17 @@ class EmbedderLRUCache:
 
 class MooderLRUCache:
     "Cache implementation for Mooder objects with LRU eviction policy."
+
+    _instance = None
+    _instance_lock = Lock()
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            async with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self, capacity: int) -> None:
         self.__lock = Lock()
         self.__capacity = capacity
